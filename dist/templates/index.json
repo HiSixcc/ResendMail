@@ -1,0 +1,14 @@
+{
+  "version": "1.0",
+  "templates": [
+    {
+      "id": "anti-obfuscation-template",
+      "name": "抗混淆加密模板",
+      "description": "专为抵抗邮件加密混淆设计的模板，保持高可读性",
+      "file": "anti-obfuscation-template.html",
+      "contentSelector": "#mail-content",
+      "preview": "preview/anti-obfuscation-template.png",
+      "tags": ["抗混淆", "高可读性", "加密优化"]
+    }
+  ]
+} 

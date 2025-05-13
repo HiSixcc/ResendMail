@@ -1,1046 +1,2134 @@
-/*
-============================================================
-ResendMail 智能群发邮件大师（Cloudflare Worker 免费版）
-------------------------------------------------------------
-适用场景：大批量邮件发送，自动切换Resend多账号，突破单账号配额限制，提升送达率与反检测能力。
-主要功能：
-  - 多账号API密钥与域名自动切换（完全随机分配）
-  - 邮件内容反垃圾混淆（多策略）
-  - 邮件模板美化与个性化称呼
-  - 批量群发、自动去重、分批并发、失败重试
-  - Cloudflare Worker无状态兼容，支持API状态惰性恢复
-============================================================
-*/
+/**
+ * Resend 邮件发送 API Worker
+ * 功能：接收客户端发送的邮件请求，转发到 Resend API
+ * 增强版：支持内容加密、请求验证、错误处理、限流和诊断功能
+ * 
+ * 【使用说明】
+ * 本文件作为库文件由前端调用，不直接处理请求。
+ * API密钥(RESEND_API_KEY)和默认发件人地址(DEFAULT_FROM_EMAIL)由前端传入，
+ * 不需要在此文件中设置。这些值将在请求处理时从前端获取。
+ * 
+ * 【集成方式】
+ * 前端通过EmailService.sendMail方法调用本文件的功能，
+ * API密钥和发件人信息在调用时作为参数传递。
+ * 
+ * @version 1.1.0
+ */
 
-// === 可访问邮件发送页面的Token配置区 ===
-// 仅当路径为 /token 且 token 在此数组中时，才可访问邮件发送页面
-// 用户可自定义多个token，如 ['auto', 'abc', 'test']
-const ALLOWED_TOKENS = ['auto'];
+/******************************************************
+ * 用户配置区 - 可根据需要修改以下配置项
+ ******************************************************/
 
-// === 多账号API密钥与域名配置区 ===
-// 配置所有可用Resend账号（API Key与绑定域名），支持自动随机分配与配额突破
-const RESEND_ACCOUNTS = [
-  { apiKey: '', domain: '' },
-  { apiKey: '', domain: '' },
-  // { apiKey: 're_xxx', domain: 'yourdomain.com' },
-  // 可继续添加更多账号
-];
+/**
+ * API 基础配置
+ */
+// Resend API 端点
+const RESEND_API_ENDPOINT = "https://api.resend.com/emails";
+const RESEND_BATCH_API_ENDPOINT = "https://api.resend.com/emails/batch";
 
-// === API状态管理对象 ===
-// 跟踪每个API账号的可用状态（可用/配额超限/未知），用于动态切换与恢复
-const API_STATUS = RESEND_ACCOUNTS.map(() => ({ status: 'available', lastError: null, lastChecked: Date.now() }));
-// status: 'available' | 'quota_exceeded' | 'unknown'
+/**
+ * 用户配置部分
+ * 可根据需要修改以下配置
+ */
 
+// 基础配置 - API基础设置
+// 注意: 以下配置由前端传入，后端不需要设置这些值
+// const RESEND_API_KEY = ''; // 在此填入您的Resend API密钥
+// const DEFAULT_FROM_EMAIL = ''; // 默认发件人地址
+const ENABLE_BATCH_SENDING = true; // 是否启用批量发送功能
+// const BATCH_SIZE = 500; // 批量发送时，每批最大邮件数量 - 由前端传入
 
-// === 配置区：API密钥、域名、反垃圾敏感词 ===
-// 发送内容中如包含这些词，将自动混淆，降低被判为垃圾邮件的概率
-const DEFAULT_SENSITIVE_WORDS = [
-  '广告', '优惠', '赚钱', '免费', '推广', '点击', '注册', '活动', '红包', '返利', '代理', '投资', '博彩', '彩票', '贷款', '理财', '色情', '裸聊', '赌博', '发票', '代开', '兼职', '微信', 'QQ', '公众号', '链接'
-];
-// === 配置区结束 ===
-
-// === 同形/同音字映射表 ===
-// 用于敏感词混淆，提升反垃圾能力
-const HOMOGLYPHS = {
-  '赚': ['賺'],
-  '钱': ['錢'],
-  '广': ['廣'],
-  '告': ['吿'],
-  '优': ['優'],
-  '惠': ['惠'], // 可加更多
-  '推': ['推'],
-  '荐': ['薦'],
-  '活': ['活'],
-  '动': ['動'],
-  '免': ['免'],
-  '费': ['費'],
-  // ...可继续扩展
+// 内容加密配置 - 防止邮件被标记为垃圾邮件
+const ENABLE_CONTENT_ENCRYPTION = true; // 是否启用内容加密功能
+const CONTENT_ENCRYPTION = {
+  // 主要加密设置
+  ENABLED: ENABLE_CONTENT_ENCRYPTION, // 是否启用内容加密
+  ENCRYPTION_STRENGTH: 5, // 默认加密强度(0-10)，0为不加密，10为最强
+  
+  // 加密范围设置
+  ENCRYPT_SUBJECT: true, // 是否加密邮件主题(轻度加密)
+  ENCRYPT_HTML: true, // 是否加密HTML内容
+  ENCRYPT_TEXT: true, // 是否加密纯文本内容
+  
+  // 加密技术设置
+  ENABLE_HTML_STRUCTURE_MIXING: true, // 启用HTML结构混淆
+  ENABLE_ZERO_WIDTH_CHARS: true, // 启用零宽字符插入
+  ENABLE_UNICODE_SUBSTITUTION: true, // 启用Unicode字符替换
+  ENABLE_CSS_OBFUSCATION: true, // 启用CSS混淆
+  ENABLE_RANDOM_STYLES: true, // 启用随机样式和类名
+  ENABLE_HIDDEN_BAIT: true, // 启用隐藏"诱饵"内容
+  ENABLE_URL_OBFUSCATION: true, // 启用URL混淆
+  ENABLE_IMAGE_TEXT_BALANCING: true, // 启用图文比例平衡
+  
+  // 特殊处理设置
+  PROTECT_CHINESE_CHARACTERS: true, // 保护中文字符不被替换
+  PROTECT_EMAIL_ADDRESSES: true, // 保护邮箱地址不被混淆
+  DEFAULT_STRENGTH: 5  // 默认加密强度，同ENCRYPTION_STRENGTH
 };
 
-// === 配置区结束 ===
-
-// === Cloudflare Workers入口 ===
-// 统一处理所有HTTP请求
-addEventListener('fetch', event => {
-  event.respondWith(handleRequest(event.request));
-});
-
-/**
- * 全局请求处理器
- * - 路由分发：页面/接口/404
- * - 只有/token路径（token为非空且在ALLOWED_TOKENS中）可访问邮件发送页面
- * @param {Request} request - HTTP请求对象
- * @returns {Promise<Response>} - HTTP响应
- */
-async function handleRequest(request) {
-  const { pathname } = new URL(request.url);
-  // === 邮件发送页面路由控制 ===
-  // 仅/token路径（如/auto、/abc等，token为非空且在ALLOWED_TOKENS中）可访问发件页面
-  if (request.method === 'GET') {
-    // 匹配 /token 形式，token为非空且不含斜杠
-    const tokenMatch = pathname.match(/^\/([a-zA-Z0-9_-]+)$/);
-    if (tokenMatch && ALLOWED_TOKENS.includes(tokenMatch[1])) {
-      return new Response(getHtml(), {
-        headers: { 'content-type': 'text/html; charset=utf-8' },
-      });
-    }
-    // 根路径/可返回官网首页（如有），否则404
-    if (pathname === '/') {
-      return new Response(getHomeHtml(), {
-        headers: { 'content-type': 'text/html; charset=utf-8' },
-      });
-    }
-  }
-  // === 邮件发送API ===
-  if (request.method === 'POST' && pathname === '/api/send') {
-    return await handleSendApi(request);
-  }
-  // === 其他路径404 ===
-  return new Response('Not found', { status: 404 });
-}
-
-/**
- * 获取前端页面HTML
- * @returns {string} - HTML字符串
- */
-function getHtml() {
-  return '<!DOCTYPE html>'
-    + '<html lang="zh-CN">'
-    + '<head>'
-    + '  <meta charset="UTF-8">'
-    + '  <meta name="viewport" content="width=device-width, initial-scale=1.0">'
-    + '  <title>ResendMail 智能群发邮件</title>'
-    + '  <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">'
-    + '</head>'
-    + '<body class="bg-gray-50 min-h-screen flex flex-col items-center justify-center">'
-    + '  <div class="w-full max-w-2xl bg-white p-8 rounded shadow mt-8">'
-    + '    <h1 class="text-2xl font-bold mb-6 text-center">ResendMail 智能群发邮件</h1>'
-    + '    <form id="mailForm" class="space-y-4">'
-    + '      <div>'
-    + '        <label class="block text-gray-700">发件人名称</label>'
-    + '        <input type="text" id="senderName" name="senderName" class="mt-1 w-full border rounded px-3 py-2" placeholder="如：小明/公司名" />'
-    + '        <div class="text-xs text-gray-400 mt-1">（可选项，留空则自动使用默认名称）</div>'
-    + '      </div>'
-    + '      <div id="mailsArea"></div>'
-    + '      <button type="button" id="addMailBtn" class="bg-blue-500 text-white px-4 py-2 rounded">添加邮件项</button>'
-    + '      <button type="submit" class="bg-green-500 text-white px-4 py-2 rounded">批量发送</button>'
-    + '    </form>'
-    + '    <div id="result" class="mt-6"></div>'
-    + '  </div>'
-    + '  <script>'
-    + 'var mailIdx = 0;'
-    + 'function createMailItem(idx) {'
-    + '  return "<div class=\\"border p-4 rounded mb-4 bg-gray-50\\" data-idx=\\"" + idx + "\\">"'
-    + '    + "<div class=\\"flex justify-between items-center mb-2\\">"'
-    + '    + "<span class=\\"font-semibold\\">邮件项 #" + (idx+1) + "</span>"'
-    + '    + "<button type=\\"button\\" onclick=\\"removeMailItem(" + idx + ")\\" class=\\"text-red-500\\">移除</button>"'
-    + '    + "</div>"'
-    + '    + "<div class=\\"mb-2\\">"'
-    + '    + "<label class=\\"block text-gray-700\\">收件人（可粘贴多行、逗号、分号、空格分隔）</label>"'
-    + '    + "<input type=\\"text\\" name=\\"to_" + idx + "\\" required class=\\"mt-1 w-full border rounded px-3 py-2\\" placeholder=\\"foo@example.com,bar@example.com\\" />"'
-    + '    + "</div>"'
-    + '    + "<div class=\\"mb-2\\">"'
-    + '    + "<label class=\\"block text-gray-700\\">主题</label>"'
-    + '    + "<input type=\\"text\\" name=\\"subject_" + idx + "\\" required class=\\"mt-1 w-full border rounded px-3 py-2\\" placeholder=\\"邮件主题\\" />"'
-    + '    + "</div>"'
-    + '    + "<div>"'
-    + '    + "<label class=\\"block text-gray-700\\">HTML 内容</label>"'
-    + '    + "<textarea name=\\"html_" + idx + "\\" required class=\\"mt-1 w-full border rounded px-3 py-2\\" rows=\\"3\\" placeholder=\\"<h1>内容</h1>\\"></textarea>"'
-    + '    + "</div>"'
-    + '    + "</div>";'
-    + '}'
-    + 'function addMailItem() {'
-    + '  var area = document.getElementById("mailsArea");'
-    + '  area.insertAdjacentHTML("beforeend", createMailItem(mailIdx));'
-    + '  mailIdx++;'
-    + '}'
-    + 'function removeMailItem(idx) {'
-    + '  var area = document.getElementById("mailsArea");'
-    + '  var item = area.querySelector("[data-idx=\\"" + idx + "\\"]");'
-    + '  if (item) item.remove();'
-    + '}'
-    + 'window.addEventListener("DOMContentLoaded", function() {'
-    + '  document.getElementById("addMailBtn").onclick = addMailItem;'
-    + '  if (mailIdx === 0) addMailItem();'
-    + '});'
-    + 'document.getElementById("mailForm").onsubmit = async function(e) {'
-    + '  e.preventDefault();'
-    + '  var form = e.target;'
-    + '  var senderName = form["senderName"].value.trim();'
-    + '  var mails = [];'
-    + '  for (var i = 0; i < mailIdx; i++) {'
-    + '    var to = form["to_" + i];'
-    + '    var subject = form["subject_" + i];'
-    + '    var html = form["html_" + i];'
-    + '    if (to && subject && html) {'
-    + '      mails.push({'
-    + '        to: to.value.split(/[\\s,;\\n]+/).map(function(s){return s.trim();}).filter(Boolean),'
-    + '        subject: subject.value,'
-    + '        html: html.value'
-    + '      });'
-    + '    }'
-    + '  }'
-    + '  if (mails.length === 0) {'
-    + '    document.getElementById("result").innerHTML = "<div class=\\"text-red-500\\">请完整填写所有信息</div>";'
-    + '    return;'
-    + '  }'
-    + '  document.getElementById("result").innerHTML = "<div class=\\"text-gray-500\\">正在发送...</div>";'
-    + '  var res = await fetch("/api/send", {'
-    + '    method: "POST",'
-    + '    headers: { "Content-Type": "application/json" },'
-    + '    body: JSON.stringify({ senderName: senderName, mails: mails })'
-    + '  });'
-    + '  var data = await res.json();'
-    + '  if (data.success) {'
-    + '    document.getElementById("result").innerHTML = "<div class=\\"text-green-600\\">发送成功！</div>" +'
-    + '      "<pre class=\\"bg-gray-100 p-2 mt-2 rounded text-xs\\">" + JSON.stringify(data.result, null, 2) + "</pre>";'
-    + '  } else {'
-    + '    document.getElementById("result").innerHTML = "<div class=\\"text-red-600\\">发送失败：" + (data.error || "未知错误") + "</div>";'
-    + '  }'
-    + '}'
-    + '</script>'
-    + '</body>'
-    + '</html>';
-}
-
-function randomZeroWidth(str) {
-  // 在每隔 10~20 个字符随机插入零宽字符
-  let out = '';
-  let i = 0;
-  while (i < str.length) {
-    let step = 10 + Math.floor(Math.random() * 10);
-    out += str.slice(i, i + step);
-    if (i + step < str.length) out += '\u200B';
-    i += step;
-  }
-  return out;
-}
-
-function insertZeroWidth(str) {
-  // 对每个敏感词插入零宽字符
-  DEFAULT_SENSITIVE_WORDS.forEach(word => {
-    // 全局替换，区分大小写
-    const re = new RegExp(word, 'g');
-    // 在每个字之间插入零宽空格
-    const obf = word.split('').join('\u200B');
-    str = str.replace(re, obf);
-  });
-  let s = str;
-  s = '您好，以下是您的信息：<br>' + s;
-  return s;
-}
-
-/**
- * 邮件内容反垃圾混淆（正文）
- * - 先敏感词混淆，再随机插入零宽字符
- * @param {string} str - 原始内容
- * @returns {string} - 混淆后内容
- */
-function antiSpamContent(str) {
-  // 先敏感词混淆，再随机插入零宽字符
-  let s = insertZeroWidth(str);
-  s = randomZeroWidth(s);
-  return s;
-}
-
-function toHtmlEntities(str) {
-  // 将每个字符转为 &#xXXXX; 形式
-  return str.split('').map(function(c) {
-    const code = c.charCodeAt(0).toString(16).toUpperCase();
-    return '&#x' + code + ';';
-  }).join('');
-}
-
-function obfuscateSubject(str) {
-  // 对敏感词做花式替换，保持主题自然可读
-  let s = str;
-  DEFAULT_SENSITIVE_WORDS.forEach(word => {
-    // 方案1：插入零宽字符
-    const re = new RegExp(word, 'g');
-    const obf = word.split('').join('\u200B');
-    s = s.replace(re, obf);
-
-    // 方案2：用空格/点号分隔（可选，任选其一）
-    // const obf = word.split('').join('·');
-    // s = s.replace(re, obf);
-
-    // 方案3：用全角字符/同音字替换（如"赚 钱"→"赚 钱"或"赚錢"）
-    // 可扩展
-  });
-  return s;
-}
-
-function advancedObfuscateSubject(str) {
-  // 对敏感词做多重混淆
-  let s = str;
-  DEFAULT_SENSITIVE_WORDS.forEach(word => {
-    // 1. 随机选择混淆方式
-    const re = new RegExp(word, 'g');
-    let obf = '';
-    for (let i = 0; i < word.length; i++) {
-      let c = word[i];
-      // 50%概率用同音/全角字
-      if (HOMOGLYPHS[c] && Math.random() < 0.5) {
-        c = HOMOGLYPHS[c][0];
-      }
-      // 30%概率插入零宽字符
-      if (Math.random() < 0.3) c += '\u200B';
-      // 20%概率插入空格/点号/下划线/全角点
-      if (Math.random() < 0.2) {
-        const sep = [' ', '·', '_', '．'][Math.floor(Math.random() * 4)];
-        c += sep;
-      }
-      obf += c;
-    }
-    s = s.replace(re, obf);
-  });
-  return s;
-}
-
-/**
- * 获取敏感词列表（支持自定义）
- * @param {string[]} customWords - 用户自定义敏感词
- * @returns {string[]} - 最终敏感词列表
- */
-function getSensitiveWords(customWords) {
-  // 支持用户自定义敏感词，优先使用自定义，否则用默认
-  if (Array.isArray(customWords) && customWords.length > 0) {
-    return customWords;
-  }
-  return DEFAULT_SENSITIVE_WORDS;
-}
-
-// 混淆策略类型
-const OBFUSCATE_MODES = {
-  ZERO_WIDTH: 'zeroWidth',
-  HOMOGLYPH: 'homoglyph',
-  SYMBOL: 'symbol'
+// 提供商检测相关设置
+const PROVIDER_DETECTION_CONFIG = {
+  ENABLED: true,                 // 是否启用提供商自动检测
+  OPTIMIZE_BY_PROVIDER: true,    // 是否根据提供商优化加密策略
+  LOG_PROVIDER_INFO: true        // 是否记录提供商信息
 };
 
-// 通用混淆函数
-function obfuscateWord(word, mode) {
-  let out = '';
-  for (let i = 0; i < word.length; i++) {
-    let c = word[i];
-    if (mode === OBFUSCATE_MODES.HOMOGLYPH && HOMOGLYPHS[c]) {
-      c = HOMOGLYPHS[c][0];
-    }
-    if (mode === OBFUSCATE_MODES.ZERO_WIDTH) {
-      c += '\u200B';
-    }
-    if (mode === OBFUSCATE_MODES.SYMBOL) {
-      const sep = [' ', '·', '_', '．'][Math.floor(Math.random() * 4)];
-      c += sep;
-    }
-    out += c;
-  }
-  return out;
-}
+/**
+ * 限制与安全配置
+ */
+// 限制配置 - 防止误操作和滥用
+const LIMITS_CONFIG = {
+  MAX_RECIPIENTS: 1000, // 单次请求最大收件人数量
+  MAX_SUBJECT_LENGTH: 990, // 主题最大长度
+  MAX_TEXT_LENGTH: 1000000, // 纯文本最大长度
+  MAX_HTML_LENGTH: 1000000, // HTML最大长度
+  MAX_ATTACHMENTS: 20, // 最大附件数量
+  MAX_ATTACHMENT_SIZE: 40 * 1024 * 1024, // 单个附件最大大小(40MB)
+  ALLOWED_ATTACHMENT_TYPES: [
+    'application/pdf', 'image/jpeg', 'image/png', 'application/msword',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'application/vnd.ms-excel', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    'text/plain', 'text/csv'
+  ], // 允许的附件类型
+};
 
-// 多策略混淆
-function advancedObfuscate(str, sensitiveWords, modes = [OBFUSCATE_MODES.ZERO_WIDTH, OBFUSCATE_MODES.HOMOGLYPH, OBFUSCATE_MODES.SYMBOL]) {
-  let s = str;
-  sensitiveWords.forEach(word => {
-    const re = new RegExp(word, 'g');
-    // 随机选择混淆方式组合
-    let mode = modes[Math.floor(Math.random() * modes.length)];
-    let obf = obfuscateWord(word, mode);
-    s = s.replace(re, obf);
-  });
-  return s;
-}
+// 速率限制配置 - 控制发送频率
+const RATE_LIMIT_CONFIG = {
+  ENABLE_RATE_LIMITING: true, // 是否启用速率限制
+  REQUEST_LIMIT: 60, // 每分钟最大请求数
+  EMAIL_LIMIT: 500, // 每分钟最大发送邮件数
+  BURST_LIMIT: 100, // 瞬时最大请求数
+  COOLDOWN_PERIOD: 600, // 触发限制后的冷却时间(秒)
+};
 
-// === Cloudflare Workers 不允许全局定时器，定时逻辑迁移到 handler 内部 ===
-let lastApiStatusResetTime = Date.now(); // 记录上次API状态恢复时间
+// 安全配置 - 保护API和内容
+const SECURITY_CONFIG = {
+  ENFORCE_TLS: true, // 是否强制使用TLS连接
+  ALLOWED_DOMAINS: [], // 允许的发件人域名，为空则不限制
+  BLOCKED_DOMAINS: [], // 禁止的收件人域名，为空则不限制
+  IP_WHITELIST: [], // IP白名单，为空则不限制
+  ENABLE_DKIM: true, // 是否启用DKIM签名
+  ENABLE_SPF: true, // 是否启用SPF检查
+  REQUIRE_API_KEY: true, // 是否要求API密钥
+  ALLOWED_ORIGINS: ["*"], // 允许的CORS源
+  ALLOWED_METHODS: ["POST", "OPTIONS", "GET"], // 允许的HTTP方法
+};
 
-// === 并发与重试参数配置 ===
-const BATCH_SIZE = 5; // 每批并发数
-const MAX_RETRY = 3;  // 每封邮件最大重试次数
-const RETRY_DELAY = 300; // 每次重试延迟(ms)
+// 日志配置 - 调试和监控
+const LOGGING_CONFIG = {
+  LOG_LEVEL: 'info', // 日志级别: debug, info, warn, error
+  ENABLE_ACCESS_LOGS: true, // 是否记录访问日志
+  ENABLE_ERROR_LOGS: true, // 是否记录错误日志
+  LOG_REQUEST_DETAILS: false, // 是否记录详细请求信息(可能包含敏感信息)
+  MASK_SENSITIVE_DATA: true, // 是否在日志中掩码敏感数据
+};
 
 /**
- * 可用账号自动分配函数（完全随机分配）
- * - 每次调用时在所有可用账号中随机选取一个，避免顺序分配导致单账号负载过重
- * @returns {Object} - 账号对象（含apiKey、domain、idx）
+ * 邮件客户端与提供商配置
  */
-function pickAvailableAccount() {
-  // 收集所有可用账号的索引
-  const availableIdx = API_STATUS.map((s, i) => s.status === 'available' ? i : -1).filter(i => i !== -1);
-  if (availableIdx.length === 0) {
-    // 若无可用账号，默认返回第一个
-    return { ...RESEND_ACCOUNTS[0], idx: 0 };
+// 默认加密配置(适用于未识别的提供商)
+const DEFAULT_ENCRYPTION = {
+  strength: 4,
+  zeroWidth: true,
+  unicode: false,
+  htmlMixing: false,
+  cssObfuscation: true,
+  subjectEncryption: false
+};
+
+// 邮件提供商配置数据库 - 用于提供商感知型内容加密
+const EMAIL_PROVIDERS = {
+  // 国际邮件提供商
+  'gmail.com': {
+    name: 'Gmail',
+    type: 'international',
+    features: ['ml-filtering', 'promotional-tabs', 'character-detection'],
+    encryption: {
+      strength: 5,
+      zeroWidth: true,
+      unicode: false,
+      htmlMixing: false,
+      cssObfuscation: true,
+      subjectEncryption: false,
+      sensitiveWords: ['sale', 'free', 'buy now', 'click here', 'limited time'],
+      avoidTechniques: ['hidden-text']
+    }
+  },
+  'outlook.com': {
+    name: 'Outlook',
+    type: 'international',
+    features: ['url-scanning', 'attachment-scanning', 'pattern-detection'],
+    encryption: {
+      strength: 4,
+      zeroWidth: true,
+      unicode: false,
+      htmlMixing: false,
+      cssObfuscation: true,
+      subjectEncryption: false,
+      specialHandling: ['image-text-ratio', 'limit-urls']
+    }
+  },
+  'yahoo.com': {
+    name: 'Yahoo',
+    type: 'international',
+    features: ['engagement-based', 'domain-reputation'],
+    encryption: {
+      strength: 6,
+      zeroWidth: true,
+      unicode: false,
+      htmlMixing: false,
+      cssObfuscation: true,
+      subjectEncryption: false
+    }
+  },
+  
+  // 中国邮件提供商
+  'qq.com': {
+    name: 'QQ邮箱',
+    type: 'china',
+    features: ['strict-content-filtering', 'attachment-restrictions'],
+    encryption: {
+      strength: 6,
+      zeroWidth: true,
+      unicode: false,
+      htmlMixing: false,
+      cssObfuscation: true,
+      subjectEncryption: false,
+      specialHandling: ['chinese-character-protection']
+    }
+  },
+  '163.com': {
+    name: '网易163邮箱',
+    type: 'china',
+    features: ['keyword-filtering', 'attachment-restrictions'],
+    encryption: {
+      strength: 8,
+      zeroWidth: true,
+      unicode: true,
+      htmlMixing: true,
+      cssObfuscation: true,
+      subjectEncryption: true,
+      specialHandling: ['chinese-character-protection']
+    }
+  },
+  '126.com': {
+    name: '网易126邮箱',
+    type: 'china',
+    encryption: {
+      strength: 8,
+      zeroWidth: true,
+      unicode: true,
+      htmlMixing: true,
+      cssObfuscation: true,
+      subjectEncryption: true,
+      specialHandling: ['chinese-character-protection']
+    }
+  },
+  'sina.com': {
+    name: '新浪邮箱',
+    type: 'china',
+    encryption: {
+      strength: 7,
+      zeroWidth: true,
+      unicode: true,
+      htmlMixing: true,
+      cssObfuscation: true,
+      subjectEncryption: true
+    }
+  },
+  'foxmail.com': {
+    name: 'Foxmail',
+    type: 'china',
+    encryption: {
+      strength: 7,
+      zeroWidth: true,
+      unicode: true, 
+      htmlMixing: true,
+      cssObfuscation: true
+    }
+  },
+  
+  // 新增国内邮箱
+  '139.com': {
+    name: '中国移动139邮箱',
+    type: 'china',
+    features: ['keyword-filtering', 'attachment-restrictions', 'mobile-first'],
+    encryption: {
+      strength: 7,
+      zeroWidth: true,
+      unicode: true,
+      htmlMixing: false,
+      cssObfuscation: true,
+      subjectEncryption: true,
+      specialHandling: ['chinese-character-protection', 'protect-sensitive-data']
+    }
+  },
+  '188.com': {
+    name: '中国移动188邮箱',
+    type: 'china',
+    features: ['keyword-filtering', 'attachment-restrictions', 'mobile-first'],
+    encryption: {
+      strength: 7,
+      zeroWidth: true,
+      unicode: true,
+      htmlMixing: false,
+      cssObfuscation: true,
+      subjectEncryption: true,
+      specialHandling: ['chinese-character-protection', 'protect-sensitive-data']
+    }
+  },
+  '189.com': {
+    name: '中国电信189邮箱',
+    type: 'china',
+    features: ['keyword-filtering', 'attachment-restrictions'],
+    encryption: {
+      strength: 7,
+      zeroWidth: true,
+      unicode: true,
+      htmlMixing: false,
+      cssObfuscation: true,
+      subjectEncryption: true,
+      specialHandling: ['chinese-character-protection', 'protect-sensitive-data']
+    }
+  },
+  'sohu.com': {
+    name: '搜狐邮箱',
+    type: 'china',
+    features: ['keyword-filtering', 'promotional-tabs'],
+    encryption: {
+      strength: 6,
+      zeroWidth: true,
+      unicode: true,
+      htmlMixing: false,
+      cssObfuscation: true,
+      subjectEncryption: false,
+      specialHandling: ['chinese-character-protection', 'optimize-tables']
+    }
+  },
+  '21cn.com': {
+    name: '21CN邮箱',
+    type: 'china',
+    features: ['keyword-filtering'],
+    encryption: {
+      strength: 6,
+      zeroWidth: true,
+      unicode: true,
+      htmlMixing: false,
+      cssObfuscation: true,
+      subjectEncryption: false,
+      specialHandling: ['chinese-character-protection']
+    }
+  },
+  'aliyun.com': {
+    name: '阿里云邮箱',
+    type: 'china',
+    features: ['spam-detection', 'enterprise-focused'],
+    encryption: {
+      strength: 5,
+      zeroWidth: true,
+      unicode: false,
+      htmlMixing: false,
+      cssObfuscation: true,
+      subjectEncryption: false,
+      specialHandling: ['chinese-character-protection', 'optimize-tables']
+    }
+  },
+  
+  // 新增国际邮箱
+  'protonmail.com': {
+    name: 'ProtonMail',
+    type: 'international',
+    features: ['end-to-end-encryption', 'privacy-focused'],
+    encryption: {
+      strength: 4,
+      zeroWidth: true,
+      unicode: false,
+      htmlMixing: false,
+      cssObfuscation: true,
+      subjectEncryption: false
+    }
+  },
+  'zoho.com': {
+    name: 'Zoho Mail',
+    type: 'international',
+    features: ['business-focused', 'spam-detection'],
+    encryption: {
+      strength: 5,
+      zeroWidth: true,
+      unicode: false,
+      htmlMixing: false,
+      cssObfuscation: true,
+      subjectEncryption: false,
+      specialHandling: ['image-text-ratio']
+    }
+  },
+  'aol.com': {
+    name: 'AOL Mail',
+    type: 'international',
+    features: ['promotional-tabs'],
+    encryption: {
+      strength: 6,
+      zeroWidth: true,
+      unicode: false,
+      htmlMixing: false,
+      cssObfuscation: true,
+      subjectEncryption: false
+    }
+  },
+  'yandex.com': {
+    name: 'Yandex Mail',
+    type: 'international',
+    features: ['spam-detection', 'promotional-categories'],
+    encryption: {
+      strength: 5,
+      zeroWidth: true,
+      unicode: false,
+      htmlMixing: false,
+      cssObfuscation: true,
+      subjectEncryption: false
+    }
+  },
+  'tutanota.com': {
+    name: 'Tutanota',
+    type: 'international',
+    features: ['end-to-end-encryption', 'privacy-focused'],
+    encryption: {
+      strength: 3,
+      zeroWidth: true,
+      unicode: false,
+      htmlMixing: false,
+      cssObfuscation: true,
+      subjectEncryption: false
+    }
+  },
+  'gmx.com': {
+    name: 'GMX Mail',
+    type: 'international',
+    features: ['spam-detection'],
+    encryption: {
+      strength: 5,
+      zeroWidth: true,
+      unicode: false,
+      htmlMixing: false,
+      cssObfuscation: true,
+      subjectEncryption: false
+    }
+  },
+  'mail.ru': {
+    name: 'Mail.ru',
+    type: 'international',
+    features: ['spam-detection', 'attachment-scanning'],
+    encryption: {
+      strength: 6,
+      zeroWidth: true,
+      unicode: false,
+      htmlMixing: true,
+      cssObfuscation: true,
+      subjectEncryption: false
+    }
+  },
+  
+  // 企业邮箱类型
+  'exmail.qq.com': {
+    name: '腾讯企业邮箱',
+    type: 'enterprise',
+    features: ['business-focused', 'strict-filtering'],
+    encryption: {
+      strength: 6,
+      zeroWidth: true,
+      unicode: false,
+      htmlMixing: false,
+      cssObfuscation: true,
+      subjectEncryption: false,
+      specialHandling: ['chinese-character-protection', 'optimize-tables']
+    }
+  },
+  'qiye.aliyun.com': {
+    name: '阿里企业邮箱',
+    type: 'enterprise',
+    features: ['business-focused', 'strict-filtering'],
+    encryption: {
+      strength: 5,
+      zeroWidth: true,
+      unicode: false,
+      htmlMixing: false,
+      cssObfuscation: true,
+      subjectEncryption: false,
+      specialHandling: ['chinese-character-protection', 'optimize-tables']
+    }
   }
-  // 随机选取一个可用账号
-  const randIdx = availableIdx[Math.floor(Math.random() * availableIdx.length)];
-  return { ...RESEND_ACCOUNTS[randIdx], idx: randIdx };
-}
+};
+
+// 别名域名配置 - 将别名映射到已知提供商
+const DOMAIN_ALIASES = {
+  'outlook.live.com': 'outlook.com',
+  'hotmail.com': 'outlook.com',
+  'msn.com': 'outlook.com',
+  'icloud.com': 'apple-mail',
+  'me.com': 'apple-mail',
+  'mail.ru': 'mail-ru',
+  '139.com': 'china-mobile',
+  'gmail.google.com': 'gmail.com',
+  'googlemail.com': 'gmail.com',
+  'mail.qq.com': 'qq.com',
+  'vip.qq.com': 'qq.com',
+  'vip.163.com': '163.com',
+  'yeah.net': '163.com',
+  // 补充国内邮箱别名
+  'mail.aliyun.com': 'aliyun.com',
+  'qiye.163.com': '163.com',
+  'mails.tsinghua.edu.cn': 'edu.cn',
+  'sohu.net': 'sohu.com',
+  'china.com.cn': '21cn.com',
+  '21cn.net': '21cn.com',
+  'tom.com': 'tom-mail',
+  '189.cn': '189.com',
+  '139.cn': '139.com',
+  '263.net': '263.net',
+  'wo.cn': 'wo.cn',
+  'chinaren.com': 'sohu.com',
+
+  // 补充国际邮箱别名
+  'protonmail.ch': 'protonmail.com',
+  'pm.me': 'protonmail.com',
+  'zohomail.com': 'zoho.com',
+  'ymail.com': 'yahoo.com',
+  'rocketmail.com': 'yahoo.com',
+  'tutanota.de': 'tutanota.com',
+  'gmx.net': 'gmx.com',
+  'gmx.de': 'gmx.com',
+  'gmx.at': 'gmx.com',
+  'gmx.ch': 'gmx.com',
+  'web.de': 'web-de',
+  'aol.co.uk': 'aol.com',
+  'verizon.net': 'aol.com',
+  'aim.com': 'aol.com',
+  'yandex.ru': 'yandex.com',
+  'outlook.jp': 'outlook.com',
+  'live.com': 'outlook.com'
+};
+
+// 客户端类型数据库 - 针对不同邮件客户端的优化
+const CLIENT_TYPES = {
+  'web-based': {
+    // 网页邮箱客户端特定优化
+    cssSupport: true,
+    javascriptSupport: true,
+    modernHtmlSupport: true,
+    responsiveDesign: true,
+    htmlEmail: true,
+    imagesEnabled: true
+  },
+  'desktop': {
+    // 桌面客户端特定优化
+    cssSupport: true,
+    javascriptSupport: false,
+    modernHtmlSupport: true,
+    responsiveDesign: false,
+    htmlEmail: true,
+    imagesEnabled: true
+  },
+  'mobile': {
+    // 移动客户端特定优化
+    cssSupport: true,
+    javascriptSupport: false,
+    modernHtmlSupport: true,
+    narrowScreen: true,
+    responsiveDesign: true,
+    htmlEmail: true,
+    imagesEnabled: true
+  },
+  'text-only': {
+    // 纯文本客户端
+    cssSupport: false,
+    javascriptSupport: false,
+    modernHtmlSupport: false,
+    responsiveDesign: false,
+    htmlEmail: false,
+    imagesEnabled: false
+  },
+  'outlook-desktop': {
+    // Outlook桌面客户端
+    cssSupport: true,
+    javascriptSupport: false,
+    modernHtmlSupport: false, // 使用Word渲染引擎
+    wordRenderer: true,
+    responsiveDesign: false,
+    htmlEmail: true,
+    imagesEnabled: false // 默认可能会阻止图片
+  },
+  'gmail-app': {
+    // Gmail移动应用
+    cssSupport: true,
+    javascriptSupport: false,
+    modernHtmlSupport: true,
+    responsiveDesign: true,
+    htmlEmail: true,
+    imagesEnabled: true,
+    promotionalTab: true
+  },
+  'china-mobile': {
+    // 中国移动端邮箱应用
+    cssSupport: true,
+    javascriptSupport: false,
+    modernHtmlSupport: true,
+    narrowScreen: true,
+    responsiveDesign: true,
+    htmlEmail: true,
+    imagesEnabled: true,
+    chineseOptimized: true
+  },
+  'enterprise': {
+    // 企业邮箱客户端
+    cssSupport: true,
+    javascriptSupport: false,
+    modernHtmlSupport: true,
+    responsiveDesign: false,
+    htmlEmail: true,
+    imagesEnabled: true,
+    securityFocused: true
+  }
+};
+
+/******************************************************
+ * 系统配置 - 内部使用，通常不需要修改
+ ******************************************************/
 
 /**
- * 邮件内容模板渲染
- * - 对正文内容做HTML实体编码，签名区保持明文
- * - 个性化称呼高亮，支持多种称呼格式
- * @param {string} userHtml - 用户输入HTML
- * @param {string} senderName - 发件人名称
- * @param {string} recipientEmail - 收件人邮箱
- * @param {string} greeting - 称呼语句
- * @returns {string} - 完整HTML模板
+ * 配置整合对象
+ * 将所有配置整合到一个对象中，便于访问
+ * 注意：API_KEY、DEFAULT_FROM和BATCH_SIZE由前端传入，这里设为null
  */
-function renderMailTemplate(userHtml, senderName, recipientEmail, greeting) {
-  // 只对正文内容做HTML实体编码，签名区保持明文
-  const encodedUserHtml = toHtmlEntities(userHtml);
-  // 优先用邮箱前缀
-  let nameOrEmail = recipientEmail;
-  if (recipientEmail && recipientEmail.indexOf('@') > 0) {
-    nameOrEmail = recipientEmail.split('@')[0];
-  }
-  // greeting由外部传入，nameOrEmail高亮
-  let highlightName = recipientEmail;
-  if (recipientEmail && recipientEmail.indexOf('@') > 0) {
-    highlightName = recipientEmail.split('@')[0];
-  }
-  // 用于高亮称呼中的名字
-  const highlight = `<span style=\"color:#2563eb;font-weight:bold;\">${highlightName}</span>`;
-  // 替换greeting中的名字部分
-  let greetingHtml = greeting.replace(highlightName, highlight);
-  return `<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>邮件通知</title>
-  <link rel="stylesheet" href="//at.alicdn.com/t/font_1234567_abcd1234.css">
-  <style>
-    body {margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#444;line-height:1.6;background:linear-gradient(135deg,#e3ecfa 0%,#f6fafd 100%);}
-    .email-container{max-width:600px;margin:0 auto;padding:20px;}
-    .card{background:#fff;border-radius:20px;box-shadow:0 8px 24px rgba(30,64,175,0.08);border:1px solid #e3ecfa;}
-    .email-body{padding:40px;margin-bottom:36px;}
-    .signature{margin-top:20px;padding:16px 20px;}
-    .signature h2{margin:0 0 6px 0;font-size:1.6em;font-weight:700;color:#1e293b;letter-spacing:0.5px;}
-    .signature p.italic{font-style:italic;color:#64748b;font-size:1em;margin-bottom:6px;}
-    .signature p.contact{font-size:0.95em;color:#475569;margin-bottom:2px;}
-    .signature hr{border:none;height:1px;background-color:#e3ecfa;margin:7px 0;}
-    .signature .links{margin:7px 0 2px 0;font-size:0.95em;color:#64748b;}
-    .signature .links a{color:#64748b;text-decoration:none;margin-right:14px;transition:color 0.2s;}
-    .signature .links a:hover{color:#3b82f6;}
-    @media (max-width:700px){.email-container{padding:8px;}.email-body,.signature{border-radius:14px;padding:16px 8px;margin-bottom:18px;}.email-body{padding:18px 8px;}.signature h2{font-size:1.15em;}.signature p.italic{font-size:0.95em;}}
-  </style>
-</head>
-<body>
-  <div class="email-container">
-    <div class="email-body card">
-      <p>${greetingHtml}</p>
-      <div>${encodedUserHtml}</div>
-      <p>祝好，</p>
-      <div class="signature card">
-        <table cellpadding="0" cellspacing="0" width="100%" style="width:100%;max-width:600px;margin:0 auto;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#444;background-color:transparent;box-shadow:none;">
-          <tr>
-            <td style="width:25%;max-width:100px;padding:8px;vertical-align:middle;text-align:center;">
-              <img src="https://img.api.aa1.cn/2025/05/08/32c7e2ab954bf.jpg" alt="Avatar" style="display:block;width:48px;height:48px;line-height:48px;text-align:center;border-radius:50%;background:#f3f4f6;object-fit:cover;">
-            </td>
-            <td style="padding:8px;vertical-align:middle;border-left:1px solid #eeeeee;">
-              <h2>技术顾问 - 六</h2>
-              <p class="italic">"专业服务，品质保障，让技术创造价值"</p>
-              <hr>
-              <p class="contact">
-                <i class="iconfont icon-mail" style="font-size:16px;vertical-align:middle;margin-right:5px;"></i>
-                <a href="mailto:admin@ntun.cn">admin@ntun.cn</a>
-              </p>
-              <div style="margin:5px 0 2px 0;font-size:0.9em;line-height:1.6;">
-                <span class="links">
-                  <a href="https://www.ntun.cn" target="_blank">主页</a>
-                  <a href="https://zx.ntun.cn" target="_blank">联系方式</a>
-                  <a href="https://www.ohi.cc" target="_blank">导航站</a>
-                </span>
-              </div>
-            </td>
-          </tr>
-        </table>
-      </div>
-    </div>
-  </div>
-</body>
-</html>`;
-}
+const CONFIG = {
+  // 基础设置
+  API_KEY: null, // 将在请求处理时从前端传入
+  DEFAULT_FROM: null, // 将在请求处理时从前端传入
+  ENABLE_BATCH_SENDING: ENABLE_BATCH_SENDING,
+  BATCH_SIZE: null, // 将在请求处理时从前端传入
+  API_ENDPOINTS: {
+    SINGLE: RESEND_API_ENDPOINT,
+    BATCH: RESEND_BATCH_API_ENDPOINT,
+  },
+  
+  // 内容加密设置
+  ENABLE_CONTENT_ENCRYPTION: ENABLE_CONTENT_ENCRYPTION,
+  CONTENT_ENCRYPTION: CONTENT_ENCRYPTION,
+  
+  // 内容限制
+  LIMITS: LIMITS_CONFIG,
+  
+  // 请求限制
+  RATE_LIMIT: RATE_LIMIT_CONFIG,
+  
+  // 安全设置
+  SECURITY: SECURITY_CONFIG,
+  
+  // 日志设置
+  LOGGING: LOGGING_CONFIG,
+  
+  // 邮件提供商检测设置
+  PROVIDER_DETECTION: PROVIDER_DETECTION_CONFIG
+};
+
+// 响应状态码和消息
+const HTTP_STATUS = {
+  OK: 200,
+  BAD_REQUEST: 400,
+  UNAUTHORIZED: 401,
+  FORBIDDEN: 403,
+  NOT_FOUND: 404,
+  TOO_MANY_REQUESTS: 429,
+  INTERNAL_ERROR: 500,
+};
+
+// 错误代码定义
+const ERROR_CODES = {
+  MISSING_API_KEY: "MISSING_API_KEY",
+  INVALID_API_KEY: "INVALID_API_KEY",
+  MISSING_REQUIRED_FIELD: "MISSING_REQUIRED_FIELD",
+  INVALID_EMAIL_FORMAT: "INVALID_EMAIL_FORMAT",
+  CONTENT_TOO_LARGE: "CONTENT_TOO_LARGE",
+  TOO_MANY_RECIPIENTS: "TOO_MANY_RECIPIENTS",
+  RATE_LIMIT_EXCEEDED: "RATE_LIMIT_EXCEEDED",
+  INTERNAL_ERROR: "INTERNAL_ERROR",
+  UPSTREAM_ERROR: "UPSTREAM_ERROR",
+  QUOTA_EXCEEDED: "QUOTA_EXCEEDED",
+};
+
+// 全局请求计数器（用于限流）
+const requestCounter = new Map();
+
+// 定义CORS头，确保接受所有来源的请求
+const CORS_HEADERS = {
+  "Access-Control-Allow-Origin": "*",  // 允许任何来源访问
+  "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Requested-With",
+  "Access-Control-Max-Age": "86400"  // 缓存预检请求结果24小时
+};
+
+/******************************************************
+ * 核心工具函数
+ ******************************************************/
 
 /**
- * 邮件发送主处理函数
- * - 支持多账号自动切换与配额突破（完全随机分配）
- * - 支持敏感词混淆、批量去重、分批并发、失败重试
- * - Cloudflare Worker兼容性：定时逻辑采用惰性检查
- * @param {Request} request - API请求对象
- * @returns {Promise<Response>} - API响应
+ * 在发送邮件前，检查HTML内容是否完整（同步版本）
+ * @param {Object} emailData - 邮件数据
+ * @returns {Object} - 处理后的邮件数据
  */
-async function handleSendApi(request) {
+function enhanceEmailContent(emailData) {
+  if (!emailData || !emailData.html) {
+    return emailData;
+  }
+
   try {
-    // === 惰性定时检查API状态 ===
-    // Cloudflare Workers不允许全局定时器，每次请求时判断是否需要恢复超限API
-    const now = Date.now();
-    if (now - lastApiStatusResetTime > 60 * 60 * 1000) {
-      API_STATUS.forEach((status, idx) => {
-        if (status.status === 'quota_exceeded') {
-          API_STATUS[idx] = { status: 'available', lastError: null, lastChecked: now };
-        }
-      });
-      lastApiStatusResetTime = now;
+    // 检查是否为完整HTML文档
+    const isCompleteHtml = (html) => {
+      const containsDoctype = html.trim().toLowerCase().startsWith('<!doctype');
+      const containsHtmlTag = /<html[^>]*>/i.test(html);
+      const containsHeadTag = /<head[^>]*>/i.test(html);
+      const containsBodyTag = /<body[^>]*>/i.test(html);
+      
+      return containsDoctype && containsHtmlTag && containsHeadTag && containsBodyTag;
+    };
+
+    // 如果HTML已经完整则不需修改
+    if (isCompleteHtml(emailData.html)) {
+      console.log('邮件HTML已经是完整文档');
+      return emailData;
     }
-    const { senderName, mails, customSensitiveWords, obfuscateModes, accountIndex, apiKey } = await request.json();
-    function randomPrefix() {
-      return 'user_' + Math.random().toString(36).slice(2, 10);
-    }
-    const safeSenderName = senderName && senderName.trim() ? senderName.trim() : '发件人';
-    if (!Array.isArray(mails) || mails.length === 0) {
-      return new Response(JSON.stringify({ success: false, error: '参数不完整' }), { status: 400, headers: { 'content-type': 'application/json' } });
-    }
-    // === 账号选择优先级：参数指定 > 自动判断 ===
-    let fixedAccountIdx = null;
-    if (typeof accountIndex === 'number' && RESEND_ACCOUNTS[accountIndex]) {
-      fixedAccountIdx = accountIndex;
-    } else if (typeof apiKey === 'string') {
-      const idx = RESEND_ACCOUNTS.findIndex(acc => acc.apiKey === apiKey);
-      if (idx !== -1) fixedAccountIdx = idx;
-    }
-    if ((accountIndex !== undefined || apiKey !== undefined) && fixedAccountIdx === null) {
-      return new Response(JSON.stringify({ success: false, error: '指定账号参数无效' }), { status: 400, headers: { 'content-type': 'application/json' } });
-    }
-    const sensitiveWords = getSensitiveWords(customSensitiveWords);
-    const modes = Array.isArray(obfuscateModes) && obfuscateModes.length > 0 ? obfuscateModes : [OBFUSCATE_MODES.ZERO_WIDTH, OBFUSCATE_MODES.HOMOGLYPH, OBFUSCATE_MODES.SYMBOL];
-    // === 全局收件人邮箱去重+自动拆分 ===
-    const emailMap = new Map(); // email => {subject, html, ...}
-    let duplicateCount = 0;
-    let totalInput = 0;
-    mails.forEach(mail => {
-      (mail.to || []).forEach(email => {
-        totalInput++;
-        const normEmail = email.trim().toLowerCase();
-        if (!emailMap.has(normEmail)) {
-          emailMap.set(normEmail, { ...mail, to: [normEmail] });
-        } else {
-          duplicateCount++;
-        }
-      });
-    });
-    const dedupedMails = Array.from(emailMap.values());
-    // === END ===
-    // 后续逻辑全部用dedupedMails替代mails
-    let batch = [];
-    let batchApiIdx = [];
-    dedupedMails.forEach(mail => {
-      let account = null;
-      if (fixedAccountIdx !== null) {
-        account = { ...RESEND_ACCOUNTS[fixedAccountIdx], idx: fixedAccountIdx };
-      } else if (RESEND_ACCOUNTS.length === 1) {
-        account = { ...RESEND_ACCOUNTS[0], idx: 0 };
-      } else {
-        account = pickAvailableAccount();
-      }
-      if (!account) return;
-      // 反垃圾混淆正文
-      const obfHtml = advancedObfuscate(mail.html, sensitiveWords, modes);
-      // 随机选用称呼格式
-      let nameOrEmail = mail.to[0];
-      if (nameOrEmail && nameOrEmail.indexOf('@') > 0) {
-        nameOrEmail = nameOrEmail.split('@')[0];
-      }
-      const greetings = [
-        `尊敬的${nameOrEmail}：`,
-        `${nameOrEmail}，您好：`,
-        `亲爱的${nameOrEmail}：`
-      ];
-      const greeting = greetings[Math.floor(Math.random() * greetings.length)];
-      batch.push({
-        from: safeSenderName + ' <' + randomPrefix() + '@' + account.domain + '>',
-        to: mail.to, // 每个任务只含一个邮箱
-        subject: advancedObfuscate(mail.subject, sensitiveWords, modes),
-        html: renderMailTemplate(obfHtml, safeSenderName, mail.to[0], greeting)
-      });
-      batchApiIdx.push(account.idx);
-    });
-    // === END ===
-    // === 分批并发+灵活重试实现 ===
-    async function sendWithRetry(sendFn, maxRetry, delay) {
-      let lastError = null;
-      for (let attempt = 1; attempt <= maxRetry; attempt++) {
-        try {
-          return await sendFn();
-        } catch (e) {
-          lastError = e;
-          if (attempt < maxRetry) await new Promise(res => setTimeout(res, delay));
-        }
-      }
-      throw lastError;
-    }
-    // 分批处理
-    let results = [];
-    for (let i = 0; i < batch.length; i += BATCH_SIZE) {
-      const batchSlice = batch.slice(i, i + BATCH_SIZE);
-      const batchIdxSlice = batchApiIdx.slice(i, i + BATCH_SIZE);
-      const batchPromises = batchSlice.map((mail, idx) => {
-        const apiIdx = batchIdxSlice[idx];
-        return sendWithRetry(async () => {
-          const account = RESEND_ACCOUNTS[apiIdx];
-          const resp = await fetch('https://api.resend.com/emails', {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${account.apiKey}`,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(mail),
-          });
-          const result = await resp.json();
-          if (resp.ok) {
-            return { success: true, result, apiIdx };
-          } else {
-            if (result.error && /limit|quota|exceed/i.test(result.error)) {
-              API_STATUS[apiIdx].status = 'quota_exceeded';
-              API_STATUS[apiIdx].lastError = result.error;
-              API_STATUS[apiIdx].lastChecked = Date.now();
-            }
-            throw new Error(result.error || 'Resend API 错误');
-          }
-        }, MAX_RETRY, RETRY_DELAY).then(
-          r => r,
-          e => ({ success: false, error: e.message, apiIdx })
-        );
-      });
-      const batchResults = await Promise.allSettled(batchPromises);
-      results.push(...batchResults.map(r => r.value || r.reason));
-    }
-    // === END ===
-    if (results.every(r => r.success)) {
-      return new Response(JSON.stringify({ success: true, result: results, deduped: true, duplicateCount, uniqueCount: dedupedMails.length, totalInput }), { headers: { 'content-type': 'application/json' } });
-    } else {
-      return new Response(JSON.stringify({ success: false, result: results, error: '部分或全部邮件发送失败', deduped: true, duplicateCount, uniqueCount: dedupedMails.length, totalInput }), { status: 500, headers: { 'content-type': 'application/json' } });
-    }
-  } catch (e) {
-    return new Response(JSON.stringify({ success: false, error: e.message }), { status: 500, headers: { 'content-type': 'application/json' } });
+
+    // 不再应用默认模板，仅记录警告
+    console.log('邮件HTML不完整，但不再应用默认模板。请确保前端在发送前应用正确的模板');
+    
+    // 返回原始数据，不做修改
+    return emailData;
+  } catch (error) {
+    console.error('检查HTML内容时出错:', error);
+    return emailData; // 出错时返回原始数据
   }
 }
 
-// === 官网首页内容渲染函数（交互动效优化版+GitHub仓库链接） ===
-// 维护说明：如需更新官网内容，请同步修改本函数内HTML字符串
-function getHomeHtml() {
-  return `<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ResendMail 智能群发邮件大师</title>
-  <meta name="description" content="ResendMail 智能群发邮件大师 - 基于Resend API的高效智能邮件群发平台，支持多账号突破、反垃圾混淆、个性化称呼、批量群发等功能。">
-  <meta name="keywords" content="ResendMail, 群发邮件, 邮件API, 批量邮件, 反垃圾, 邮件营销, 企业通知, 邮件服务, Cloudflare Worker, 多账号, 邮件送达率">
-  <meta name="author" content="HiSixcc, ResendMail Team">
-  <meta property="og:title" content="ResendMail 智能群发邮件大师">
-  <meta property="og:description" content="高效智能邮件群发平台，支持多账号突破、反垃圾混淆、个性化称呼、批量群发等功能。">
-  <meta property="og:type" content="website">
-  <meta property="og:url" content="https://resendmail.hisix.cc/">
-  <meta property="og:image" content="https://img.api.aa1.cn/2025/05/08/32c7e2ab954bf.jpg">
-  <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="ResendMail 智能群发邮件大师">
-  <meta name="twitter:description" content="高效智能邮件群发平台，支持多账号突破、反垃圾混淆、个性化称呼、批量群发等功能。">
-  <meta name="twitter:image" content="https://img.api.aa1.cn/2025/05/08/32c7e2ab954bf.jpg">
-  <script type="application/ld+json">
-    {
-      "@context": "https://schema.org",
-      "@type": "SoftwareApplication",
-      "name": "ResendMail 智能群发邮件大师",
-      "url": "https://resendmail.hisix.cc/",
-      "image": "https://img.api.aa1.cn/2025/05/08/32c7e2ab954bf.jpg",
-      "description": "ResendMail 智能群发邮件大师是一款基于Resend API的高效智能邮件群发平台，支持多账号突破、反垃圾混淆、个性化称呼、批量群发等功能。",
-      "applicationCategory": "CommunicationApplication",
-      "operatingSystem": "All",
-      "offers": {
-        "@type": "Offer",
-        "price": "0",
-        "priceCurrency": "CNY"
-      },
-      "author": {
-        "@type": "Organization",
-        "name": "HiSixcc"
-      },
-      "aggregateRating": {
-        "@type": "AggregateRating",
-        "ratingValue": "4.9",
-        "reviewCount": "1200"
+/**
+ * 邮件内容加密工具
+ * 提供各种方法来加密邮件内容，使其更难被垃圾邮件过滤器识别
+ */
+const EmailContentEncryption = {
+  /**
+   * 加密邮件内容
+   * 保护重要数据同时通过垃圾邮件过滤器检测
+   * @param {Object} emailData - 邮件数据对象，包含html, text, subject等字段
+   * @param {Object} options - 加密选项
+   * @param {number} options.strength - 加密强度 (范围0-10)
+   * @param {string} options.provider - 邮件服务提供商名称 (可选)
+   * @returns {Object} - 加密后的邮件数据
+   */
+  encryptEmailContent(emailData, options = {}) {
+    // 如果内容加密未启用，直接返回原始数据
+    if (!CONFIG.CONTENT_ENCRYPTION.ENABLED) {
+      return emailData;
+    }
+    
+    // 默认选项设置
+    const defaultOptions = {
+      strength: CONFIG.CONTENT_ENCRYPTION.ENCRYPTION_STRENGTH || 5,
+      provider: null
+    };
+    
+    const finalOptions = { ...defaultOptions, ...options };
+    
+    // 检查并限制强度在有效范围内
+    let strength = Math.max(0, Math.min(10, finalOptions.strength));
+    
+    // 基于内容敏感度自动调整加密强度
+    strength = this._adjustEncryptionStrengthBasedOnContent(emailData, strength);
+    
+    // 如果强度为0，直接返回原始数据
+    if (strength === 0) {
+      return emailData;
+    }
+    
+    // 克隆邮件数据，避免修改原始对象
+    const encryptedData = JSON.parse(JSON.stringify(emailData));
+    
+    // 检测提供商并获取相关信息
+    let provider = finalOptions.provider;
+    let providerInfo = null;
+    
+    if (provider && CONFIG.PROVIDER_DETECTION.DEFAULT_PROVIDERS[provider]) {
+      providerInfo = {
+        providerName: provider,
+        config: CONFIG.PROVIDER_DETECTION.DEFAULT_PROVIDERS[provider].config || {}
+      };
+      
+      // 应用提供商特定的处理
+      if (providerInfo.config.maxStrength && strength > providerInfo.config.maxStrength) {
+        strength = providerInfo.config.maxStrength;
       }
     }
-  </script>
-  <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
-  <style>
-    :root {
-      --brand-main: #2563eb;
-      --brand-accent: #60a5fa;
-      --brand-bg: #f6fafd;
-      --brand-radius: 1.5rem;
-      --brand-shadow: 0 8px 32px #2563eb22;
-      --card-bg-1: #fff;
-      --card-bg-2: #f0f6ff;
-      --card-bg-3: #f8fafc;
-      --card-shadow-1: 0 8px 32px #2563eb11;
-      --card-shadow-2: 0 8px 32px #60a5fa11;
-      --section-bg-value: #fff;
-      --section-bg-tech: #f3f7fb;
-      --section-bg-scene: #eaf2fb;
-      --section-bg-support: #f8fafc;
-      --section-radius: 1.5rem;
-      --section-shadow: 0 8px 32px #2563eb11;
-      --section-gap: 3.5rem;
-      --section-divider: linear-gradient(90deg,#2563eb33 0%,#60a5fa44 100%);
+    
+    // 加密邮件主题
+    if (encryptedData.subject && CONFIG.CONTENT_ENCRYPTION.ENCRYPT_SUBJECT) {
+      encryptedData.subject = this._encryptSubject(encryptedData.subject, strength, providerInfo);
     }
-    @keyframes fadeInUp {0%{opacity:0;transform:translateY(30px);}100%{opacity:1;transform:translateY(0);}}
-    .fade-in-up {animation:fadeInUp 0.8s cubic-bezier(.23,1.01,.32,1) both;}
-    .fade-in-up-delay-1 {animation-delay:0.1s;}
-    .fade-in-up-delay-2 {animation-delay:0.2s;}
-    .fade-in-up-delay-3 {animation-delay:0.3s;}
-    .fade-in-up-delay-4 {animation-delay:0.4s;}
-    .fade-in-up-delay-5 {animation-delay:0.5s;}
-    .card-ani {transition:all 0.25s cubic-bezier(.23,1.01,.32,1),box-shadow 0.25s;}
-    .card-ani:hover {transform:translateY(-8px) scale(1.035);box-shadow:0 12px 36px #2563eb22,0 0 0 3px #60a5fa33;}
-    .card-bg-1 {background:var(--card-bg-1);box-shadow:var(--card-shadow-1);}
-    .card-bg-2 {background:var(--card-bg-2);box-shadow:var(--card-shadow-2);}
-    .card-bg-3 {background:var(--card-bg-3);box-shadow:var(--card-shadow-1);}
-    .svg-ani {transition:all 0.25s cubic-bezier(.23,1.01,.32,1);}
-    .svg-ani:hover {transform:scale(1.18) rotate(-8deg);filter:drop-shadow(0 2px 12px #2563eb55);}
-    .brand-logo-ani {transition:transform 0.5s cubic-bezier(.23,1.01,.32,1),box-shadow 0.5s;}
-    .brand-logo-ani:hover {transform:rotate(-8deg) scale(1.08);box-shadow:0 0 0 6px #2563eb33,0 8px 32px #2563eb22;}
-    .brand-btn-ani {position:relative;overflow:hidden;transition:all 0.25s cubic-bezier(.23,1.01,.32,1);}
-    .brand-btn-ani:hover {background:linear-gradient(90deg,#2563eb 0%,#60a5fa 100%);transform:scale(1.04);box-shadow:0 8px 32px #2563eb33;}
-    .brand-btn-ani:active {transform:scale(0.97);}
-    .brand-btn-ani::after {content:'';position:absolute;left:50%;top:50%;width:0;height:0;background:rgba(255,255,255,0.3);border-radius:100%;transform:translate(-50%,-50%);transition:width 0.4s,height 0.4s;z-index:0;}
-    .brand-btn-ani:active::after {width:180px;height:180px;}
-    .github-btn {display:inline-flex;align-items:center;gap:0.5em;background:linear-gradient(90deg,#24292f 0%,#2563eb 100%);color:#fff;font-weight:600;padding:0.6em 1.4em;border-radius:999px;box-shadow:0 2px 12px #2563eb22;transition:all 0.22s;}
-    .github-btn:hover {background:linear-gradient(90deg,#2563eb 0%,#24292f 100%);transform:scale(1.06);box-shadow:0 6px 24px #2563eb33;}
-    .github-btn svg {width:1.3em;height:1.3em;fill:currentColor;}
-    .github-link-footer {color:#2563eb;text-decoration:underline;transition:color 0.2s;}
-    .github-link-footer:hover {color:#1e40af;}
-    /* 新增品牌区动态背景与LOGO动画 */
-    .brand-hero-bg {
-      position: absolute;
-      left: 0; top: 0; width: 100%; height: 100%;
-      z-index: 0;
-      pointer-events: none;
-      overflow: hidden;
+    
+    // 加密HTML内容
+    if (encryptedData.html && CONFIG.CONTENT_ENCRYPTION.ENCRYPT_HTML) {
+      encryptedData.html = this._encryptHtmlContent(encryptedData.html, strength, providerInfo);
     }
-    .brand-hero {
-      position: relative;
-      z-index: 1;
+    
+    // 加密纯文本内容
+    if (encryptedData.text && CONFIG.CONTENT_ENCRYPTION.ENCRYPT_TEXT) {
+      encryptedData.text = this._encryptTextContent(encryptedData.text, strength, providerInfo);
     }
-    .brand-logo-ani svg {
-      animation: logoPulse 2.8s infinite cubic-bezier(.4,0,.2,1);
+    
+    // 应用提供商特定的后处理优化
+    if (provider) {
+      return this._applyProviderSpecificOptimization(encryptedData, provider);
     }
-    @keyframes logoPulse {
-      0%,100% { filter: drop-shadow(0 0 0 #60a5fa); }
-      50% { filter: drop-shadow(0 0 16px #60a5fa88); }
-    }
-    .brand-trust {
-      margin-top: 0.5rem;
-      font-size: 1.1rem;
-      color: #e0e7ef;
-      letter-spacing: 0.02em;
-      text-shadow: 0 2px 8px #2563eb44;
-      font-weight: 500;
-      animation: fadeInUp 1.2s 0.2s both;
-    }
-    @media (max-width:700px){.brand-trust{font-size:0.98rem;}
-    .section-value {
-      background: var(--section-bg-value);
-      border-radius: var(--section-radius);
-      box-shadow: var(--section-shadow);
-      padding: 2.5rem 1.5rem 2.5rem 1.5rem;
-      margin-bottom: var(--section-gap);
-    }
-    .section-tech {
-      background: var(--section-bg-tech);
-      border-radius: var(--section-radius);
-      box-shadow: var(--section-shadow);
-      padding: 2.5rem 1.5rem 2.5rem 1.5rem;
-      margin-bottom: var(--section-gap);
-    }
-    .section-scene {
-      background: var(--section-bg-scene);
-      border-radius: var(--section-radius);
-      box-shadow: var(--section-shadow);
-      padding: 2.5rem 1.5rem 2.5rem 1.5rem;
-      margin-bottom: var(--section-gap);
-    }
-    .section-support {
-      background: var(--section-bg-support);
-      border-radius: var(--section-radius);
-      box-shadow: var(--section-shadow);
-      padding: 2.5rem 1.5rem 2.5rem 1.5rem;
-      margin-bottom: 1.5rem;
-    }
-    .section-divider {
-      height: 1.2rem;
-      background: var(--section-divider);
-      border: none;
-      margin: 1.2rem -1.5rem 2.2rem -1.5rem;
-      border-radius: 999px;
-    }
-    @media (max-width:700px){
-      .section-value,.section-tech,.section-scene,.section-support{
-        padding: 1.2rem 0.5rem 1.2rem 0.5rem;
-        border-radius: 1rem;
+    
+    return encryptedData;
+  },
+  
+  /**
+   * 根据内容特征动态调整加密强度
+   * @param {Object} emailData - 邮件数据对象
+   * @returns {number} - 调整后的加密强度
+   * @private
+   */
+  _adjustEncryptionStrengthBasedOnContent(emailData, baseStrength) {
+    let adjustedStrength = baseStrength;
+    
+    // 如果基础强度为0，表示不需要加密，直接返回
+    if (baseStrength === 0) return 0;
+    
+    // 敏感关键词检测
+    const sensitivePatterns = [
+      // 金融相关
+      /\b(money|payment|credit card|bank account|bitcoin|crypto|investment)\b/i,
+      // 健康相关
+      /\b(health|medicine|treatment|drug|weight loss|diet|covid|pill)\b/i,
+      // 营销相关
+      /\b(free|discount|offer|best price|limited time|sale|buy now|order today)\b/i,
+      // 敏感信息请求
+      /\b(password|login|verify|account|update your information)\b/i,
+      // 紧急感词语
+      /\b(urgent|immediate|act now|don't delay|expires soon|last chance)\b/i
+    ];
+    
+    // 在标题和内容中检查敏感模式
+    let sensitivityScore = 0;
+    const contentToCheck = [
+      emailData.subject || '',
+      emailData.text || '',
+      emailData.html ? emailData.html.replace(/<[^>]*>/g, ' ') : ''
+    ].join(' ').toLowerCase();
+    
+    sensitivePatterns.forEach(pattern => {
+      if (pattern.test(contentToCheck)) {
+        sensitivityScore += 1;
       }
-      .section-divider{
-        height:0.7rem;
-        margin:0.7rem -0.5rem 1.2rem -0.5rem;
+    });
+    
+    // 根据敏感分数调整强度
+    if (sensitivityScore >= 3) {
+      // 多个敏感模式匹配，增加强度
+      adjustedStrength = Math.min(10, baseStrength + 2);
+    } else if (sensitivityScore >= 1) {
+      // 至少一个敏感模式匹配，稍微增加强度
+      adjustedStrength = Math.min(10, baseStrength + 1);
+    }
+    
+    return adjustedStrength;
+  },
+  
+  /**
+   * 加密HTML内容
+   * @param {string} html - 原始HTML内容
+   * @param {number} strength - 加密强度
+   * @param {Object} providerInfo - 提供商信息(可选)
+   * @returns {string} - 加密后的HTML内容
+   * @private
+   */
+  _encryptHtmlContent(html, strength, providerInfo = null) {
+    if (!html) return html;
+    
+    let encryptedHtml = html;
+    
+    // 应用提供商特定处理
+    const needChineseProtection = providerInfo && 
+                             providerInfo.config.specialHandling && 
+                             providerInfo.config.specialHandling.includes('chinese-character-protection');
+    
+    if (needChineseProtection || CONFIG.CONTENT_ENCRYPTION.PROTECT_CHINESE_CHARACTERS) {
+      encryptedHtml = this._protectChineseCharacters(encryptedHtml);
+    }
+    
+    // 应用HTML结构混淆
+    const enableHtmlMixing = CONFIG.CONTENT_ENCRYPTION.ENABLE_HTML_STRUCTURE_MIXING && 
+      (!providerInfo || providerInfo.config.htmlMixing !== false);
+    
+    if (enableHtmlMixing) {
+      encryptedHtml = this._applyHtmlStructureMixing(encryptedHtml, strength);
+    }
+    
+    // 应用零宽字符插入
+    const enableZeroWidthChars = CONFIG.CONTENT_ENCRYPTION.ENABLE_ZERO_WIDTH_CHARS && 
+      (!providerInfo || providerInfo.config.zeroWidth !== false);
+    
+    if (enableZeroWidthChars) {
+      encryptedHtml = this._insertZeroWidthCharsToHtml(encryptedHtml, strength);
+    }
+    
+    // 添加随机样式
+    const enableRandomStyles = CONFIG.CONTENT_ENCRYPTION.ENABLE_RANDOM_STYLES && 
+      (!providerInfo || providerInfo.config.cssObfuscation !== false);
+    
+    if (enableRandomStyles) {
+      encryptedHtml = this._addRandomStyles(encryptedHtml, strength);
+    }
+    
+    // 添加诱饵内容
+    const enableBaitContent = CONFIG.CONTENT_ENCRYPTION.ENABLE_HIDDEN_BAIT && 
+      (!providerInfo || !providerInfo.config.avoidTechniques || !providerInfo.config.avoidTechniques.includes('hidden-text'));
+    
+    if (enableBaitContent) {
+      encryptedHtml = this._insertHiddenBaitContent(encryptedHtml, strength);
+    }
+    
+    // URL混淆
+    const enableUrlObfuscation = CONFIG.CONTENT_ENCRYPTION.ENABLE_URL_OBFUSCATION && 
+      (!providerInfo || providerInfo.config.urlObfuscation !== false);
+    
+    if (enableUrlObfuscation) {
+      encryptedHtml = this._obfuscateUrls(encryptedHtml);
+    }
+    
+    // 平衡图文比例
+    const enableImageTextBalancing = CONFIG.CONTENT_ENCRYPTION.ENABLE_IMAGE_TEXT_BALANCING && 
+      (!providerInfo || providerInfo.config.imageTextBalancing !== false);
+    
+    if (enableImageTextBalancing) {
+      encryptedHtml = this._balanceImageTextRatio(encryptedHtml);
+    }
+    
+    // 添加解密样式，确保内容正确显示
+    encryptedHtml = this._addDecryptionStyles(encryptedHtml);
+    
+    return encryptedHtml;
+  },
+  
+  /**
+   * 加密纯文本内容，支持提供商特定优化
+   * @param {string} text - 原始纯文本内容
+   * @param {number} strength - 加密强度
+   * @param {Object} providerInfo - 提供商信息(可选)
+   * @returns {string} - 加密后的文本内容
+   * @private
+   */
+  _encryptTextContent(text, strength, providerInfo = null) {
+    if (!text) return text;
+    
+    let encryptedText = text;
+    
+    // 应用Unicode字符替换
+    const enableUnicodeSubstitution = CONFIG.CONTENT_ENCRYPTION.ENABLE_UNICODE_SUBSTITUTION && 
+      (!providerInfo || providerInfo.config.unicode !== false);
+    
+    if (enableUnicodeSubstitution) {
+      // 检查是否需要中文字符保护
+      const needChineseProtection = providerInfo && 
+                               providerInfo.config.specialHandling && 
+                               providerInfo.config.specialHandling.includes('chinese-character-protection');
+      
+      if (needChineseProtection || CONFIG.CONTENT_ENCRYPTION.PROTECT_CHINESE_CHARACTERS) {
+        // 应用中文保护版本的Unicode替换
+        encryptedText = this._applyUnicodeSubstitutionWithChineseProtection(encryptedText, strength);
+      } else {
+        // 应用标准Unicode替换
+        encryptedText = this._applyUnicodeSubstitutionToPlainText(encryptedText, strength);
       }
     }
-  </style>
-</head>
-<body class="bg-gradient-to-br from-blue-50 to-blue-100 min-h-screen font-sans">
-  <!-- 顶部品牌区（吸顶） -->
-  <div class="w-full bg-gradient-to-r from-blue-600 to-blue-400 py-12 mb-8 shadow-lg brand-sticky" style="position:relative;overflow:hidden;">
-    <!-- SVG流光/波浪/粒子动态背景 -->
-    <div class="brand-hero-bg">
-      <svg width="100%" height="100%" viewBox="0 0 1440 320" preserveAspectRatio="none" style="position:absolute;left:0;top:0;width:100%;height:100%;">
-        <defs>
-          <linearGradient id="waveGrad" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0%" stop-color="#60a5fa"/>
-            <stop offset="100%" stop-color="#2563eb"/>
-          </linearGradient>
-        </defs>
-        <path d="M0,160L60,170C120,180,240,200,360,197.3C480,195,600,169,720,154.7C840,140,960,138,1080,154.7C1200,171,1320,213,1380,234.7L1440,256L1440,0L1380,0C1320,0,1200,0,1080,0C960,0,840,0,720,0C600,0,480,0,360,0C240,0,120,0,60,0L0,0Z" fill="url(#waveGrad)" fill-opacity="0.32">
-          <animate attributeName="d" dur="8s" repeatCount="indefinite"
-            values="M0,160L60,170C120,180,240,200,360,197.3C480,195,600,169,720,154.7C840,140,960,138,1080,154.7C1200,171,1320,213,1380,234.7L1440,256L1440,0L1380,0C1320,0,1200,0,1080,0C960,0,840,0,720,0C600,0,480,0,360,0C240,0,120,0,60,0L0,0Z;
-            M0,180L60,200C120,220,240,240,360,230C480,220,600,200,720,180C840,160,960,160,1080,180C1200,200,1320,240,1380,260L1440,280L1440,0L1380,0C1320,0,1200,0,1080,0C960,0,840,0,720,0C600,0,480,0,360,0C240,0,120,0,60,0L0,0Z;
-            M0,160L60,170C120,180,240,200,360,197.3C480,195,600,169,720,154.7C840,140,960,138,1080,154.7C1200,171,1320,213,1380,234.7L1440,256L1440,0L1380,0C1320,0,1200,0,1080,0C960,0,840,0,720,0C600,0,480,0,360,0C240,0,120,0,60,0L0,0Z"/>
-        </path>
-      </svg>
-    </div>
-    <div class="max-w-3xl mx-auto flex flex-col items-center brand-hero">
-      <div class="w-20 h-20 bg-white/20 rounded-full flex items-center justify-center mb-4 shadow-lg brand-logo-ani">
-        <svg width="56" height="56" fill="none" viewBox="0 0 32 32"><rect width="32" height="32" rx="16" fill="#2563eb"/><path d="M8 12l8 8 8-8" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-      </div>
-      <h1 class="text-4xl font-extrabold tracking-wide text-white mb-2 drop-shadow">ResendMail 智能群发邮件大师</h1>
-      <div class="brand-trust">已服务 1200+ 企业与开发者，累计发送 180 万+ 邮件</div>
-      <div class="text-lg text-blue-100 font-medium mb-2">让每一封邮件都安全、智能、精准地送达您的目标用户！</div>
-      <a href="https://github.com/HiSixcc/ResendMail" class="github-btn mt-4" target="_blank" rel="noopener noreferrer" title="GitHub开源仓库">
-        <svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.01.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.11.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.19 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"></path></svg>
-        GitHub开源仓库
-      </a>
-    </div>
-  </div>
-  <main class="max-w-5xl mx-auto px-4">
-    <!-- 产品价值区 -->
-    <section id="value" class="section-value mb-16">
-      <!-- 产品简介卡片 -->
-      <div class="card-bg-1 rounded-2xl shadow-xl p-8 mb-10 flex flex-col items-center fade-in-up fade-in-up-delay-1">
-        <h2 class="text-2xl font-bold text-blue-600 mb-2">产品简介</h2>
-        <p class="text-gray-700 text-center max-w-2xl">ResendMail 智能群发邮件大师是一款基于 Resend API 打造的高效、智能、安全的邮件群发平台。专为企业、开发者和运营团队设计，助力大批量邮件精准送达，突破单账号配额限制，显著提升营销与通知效率。</p>
-      </div>
-      <!-- 核心功能卡片网格 -->
-      <div class="mb-10">
-        <h2 class="text-xl font-bold text-blue-600 mb-6">核心功能</h2>
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div class="card-bg-2 rounded-xl card-ani p-6 flex flex-col items-start">
-            <div class="bg-blue-100 p-2 rounded-full mb-3 svg-ani"><svg width="28" height="28" fill="none" viewBox="0 0 24 24"><path d="M4 4h16v2H4z" fill="#2563eb"/><rect x="4" y="8" width="16" height="12" rx="2" fill="#2563eb"/></svg></div>
-            <div class="font-bold text-lg mb-1">多账号配额突破</div>
-            <div class="text-gray-700 text-sm">支持配置多个 Resend API 账号，自动轮询切换，智能分配邮件任务，突破单账号每日/每月发送上限。实时监控账号配额与状态，自动跳过超限账号，保障邮件持续高效投递。</div>
-          </div>
-          <div class="card-bg-3 rounded-xl card-ani p-6 flex flex-col items-start">
-            <div class="bg-blue-100 p-2 rounded-full mb-3 svg-ani"><svg width="28" height="28" fill="none" viewBox="0 0 24 24"><path d="M12 4v16M4 12h16" stroke="#2563eb" stroke-width="2"/></svg></div>
-            <div class="font-bold text-lg mb-1">智能反垃圾混淆</div>
-            <div class="text-gray-700 text-sm">内置敏感词库，自动检测并对广告、推广等高风险词汇进行多策略混淆（零宽字符、同形字、符号分隔等）。支持自定义敏感词，灵活应对不同业务场景。邮件正文支持 HTML 实体加密，进一步降低被判为垃圾邮件的概率。</div>
-          </div>
-          <div class="card-bg-2 rounded-xl card-ani p-6 flex flex-col items-start">
-            <div class="bg-blue-100 p-2 rounded-full mb-3 svg-ani"><svg width="28" height="28" fill="none" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke="#2563eb" stroke-width="2"/><path d="M8 12h8M12 8v8" stroke="#2563eb" stroke-width="2"/></svg></div>
-            <div class="font-bold text-lg mb-1">个性化智能称呼</div>
-            <div class="text-gray-700 text-sm">每封邮件自动识别收件人邮箱，采用多种自然称呼格式，并高亮显示收件人，提升用户体验与邮件打开率。批量群发时，每一封邮件称呼均为独立随机，避免机械感。</div>
-          </div>
-          <div class="card-bg-3 rounded-xl card-ani p-6 flex flex-col items-start">
-            <div class="bg-blue-100 p-2 rounded-full mb-3 svg-ani"><svg width="28" height="28" fill="none" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="4" stroke="#2563eb" stroke-width="2"/><path d="M8 12h8" stroke="#2563eb" stroke-width="2"/></svg></div>
-            <div class="font-bold text-lg mb-1">批量群发与自动去重</div>
-            <div class="text-gray-700 text-sm">支持批量导入多个收件人，自动去重、格式化，防止重复发送。邮件任务分批并发处理，提升发送效率，降低单次失败风险。</div>
-          </div>
-          <div class="card-bg-2 rounded-xl card-ani p-6 flex flex-col items-start">
-            <div class="bg-blue-100 p-2 rounded-full mb-3 svg-ani"><svg width="28" height="28" fill="none" viewBox="0 0 24 24"><path d="M12 4v16M4 12h16" stroke="#2563eb" stroke-width="2"/></svg></div>
-            <div class="font-bold text-lg mb-1">灵活API切换与重试</div>
-            <div class="text-gray-700 text-sm">发送失败时自动重试，支持灵活切换可用 API 账号，最大化送达率。详细错误反馈与状态追踪，便于问题定位与优化。</div>
-          </div>
-          <div class="card-bg-3 rounded-xl card-ani p-6 flex flex-col items-start">
-            <div class="bg-blue-100 p-2 rounded-full mb-3 svg-ani"><svg width="28" height="28" fill="none" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke="#2563eb" stroke-width="2"/><path d="M8 12h8M12 8v8" stroke="#2563eb" stroke-width="2"/></svg></div>
-            <div class="font-bold text-lg mb-1">发送状态与结果反馈</div>
-            <div class="text-gray-700 text-sm">前端实时显示发送进度、成功/失败统计、详细结果列表。支持失败原因展示，便于后续补发与数据分析。</div>
-          </div>
+    
+    // 应用零宽字符插入
+    const enableZeroWidthChars = CONFIG.CONTENT_ENCRYPTION.ENABLE_ZERO_WIDTH_CHARS && 
+      (!providerInfo || providerInfo.config.zeroWidth !== false);
+    
+    if (enableZeroWidthChars) {
+      encryptedText = this._insertZeroWidthCharsIntoPlainText(encryptedText, strength);
+    }
+    
+    return encryptedText;
+  },
+  
+  /**
+   * 轻度加密邮件主题，避免被标记为垃圾邮件
+   * @param {string} subject - 原始主题
+   * @param {number} strength - 加密强度
+   * @param {Object} providerInfo - 提供商信息(可选)
+   * @returns {string} - 加密后的主题
+   * @private
+   */
+  _encryptSubject(subject, strength, providerInfo = null) {
+    // 主题加密要轻度，确保不破坏可读性
+    let encryptedSubject = subject;
+    
+    // 确定主题加密强度
+    // 对于Gmail等严格检查主题的服务，显著降低加密强度
+    let adjustedStrength = strength;
+    if (providerInfo && providerInfo.providerName === 'Gmail') {
+      adjustedStrength = Math.max(1, strength / 5); // Gmail主题最小化加密
+    } else {
+      // 其他提供商也降低强度，但程度不同
+      adjustedStrength = Math.max(1, strength / 3);
+    }
+    
+    // 应用非常轻度的Unicode替换
+    const enableUnicodeSubstitution = CONFIG.CONTENT_ENCRYPTION.ENABLE_UNICODE_SUBSTITUTION && 
+      (!providerInfo || providerInfo.config.unicode !== false);
+    
+    if (enableUnicodeSubstitution) {
+      // 保护中文字符
+      const needChineseProtection = providerInfo && 
+                               providerInfo.config.specialHandling && 
+                               providerInfo.config.specialHandling.includes('chinese-character-protection');
+      
+      if (needChineseProtection) {
+        encryptedSubject = this._applyUnicodeSubstitutionWithChineseProtection(encryptedSubject, adjustedStrength);
+      } else {
+        encryptedSubject = this._applyUnicodeSubstitutionToPlainText(encryptedSubject, adjustedStrength);
+      }
+    }
+    
+    // 仅插入少量零宽字符
+    const enableZeroWidthChars = CONFIG.CONTENT_ENCRYPTION.ENABLE_ZERO_WIDTH_CHARS && 
+      (!providerInfo || providerInfo.config.zeroWidth !== false);
+    
+    if (enableZeroWidthChars) {
+      let result = '';
+      const words = encryptedSubject.split(/\s+/);
+      
+      words.forEach((word, index) => {
+        if (index > 0) {
+          result += ' ';
+          
+          // 小概率插入零宽字符
+          if (Math.random() < (adjustedStrength / 25)) {
+            result += this._getRandomZeroWidthChar();
+          }
+        }
+        
+        result += word;
+      });
+      
+      encryptedSubject = result;
+    }
+    
+    return encryptedSubject;
+  },
+  
+  /**
+   * 添加解密CSS样式，确保加密内容正确显示
+   * @param {string} html - 处理前的HTML
+   * @returns {string} - 添加解密CSS后的HTML
+   * @private
+   */
+  _addDecryptionStyles(html) {
+    // 添加确保内容正确显示的CSS样式
+    const cssReset = `
+      <style type="text/css">
+        /* 确保所有加密内容正确显示 */
+        [class^="e"] { display: inline !important; }
+        [class^="tx_"] { display: inline !important; }
+        span, font { display: inline !important; }
+      </style>
+    `;
+    
+    // 将重置样式插入到HTML的开头
+    return cssReset + html;
+  },
+  
+  /**
+   * 处理中文字符保护，防止中文显示异常
+   * @param {string} html - 原始HTML内容
+   * @returns {string} - 处理后的HTML内容
+   * @private
+   */
+  _protectChineseCharacters(html) {
+    if (!html) return html;
+    
+    // 中文字符范围
+    const chineseCharRegex = /[\u4e00-\u9fa5]/g;
+    
+    // 找到文本节点并处理，保护中文字符
+    return html.replace(/(?<=>)([^<]+)(?=<)/g, (match) => {
+      return match.replace(/./g, (char) => {
+        if (char.match(chineseCharRegex)) {
+          // 中文字符不做替换
+          return char;
+        }
+        // 英文和其他字符保持不变，在其他函数中处理
+        return char;
+      });
+    });
+  },
+  
+  /**
+   * 平衡图片和文本比例，避免触发垃圾邮件过滤器
+   * @param {string} html - HTML内容
+   * @returns {string} - 处理后的HTML
+   * @private
+   */
+  _balanceImageTextRatio(html) {
+    // 计算图片数量
+    const imgCount = (html.match(/<img[^>]*>/g) || []).length;
+    
+    // 估算文本内容长度(简化方法)
+    const textEstimate = html.replace(/<[^>]*>/g, '').length;
+    
+    // 如果图片数量过多或文本过少，添加隐藏的有意义文本内容
+    if (imgCount > 3 && textEstimate / imgCount < 200) {
+      const hiddenText = `
+        <div style="display:block;color:inherit;font-size:small">
+          <p>尊敬的用户，感谢您关注我们的信息。</p>
+          <p>我们致力于为您提供优质的服务和内容。</p>
+          <p>如您有任何疑问，欢迎随时联系我们。</p>
         </div>
-      </div>
-      <!-- 信任背书/用户评价/平台数据 -->
-      <div>
-        <h2 class="text-xl font-bold text-blue-600 mb-6">用户评价与平台数据</h2>
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-          <div class="card-bg-2 rounded-xl card-ani p-6 flex flex-col items-center text-center">
-            <div class="text-3xl font-extrabold text-blue-700 mb-1">180万+</div>
-            <div class="text-gray-600 text-sm mb-2">累计发送邮件</div>
-            <div class="flex items-center justify-center gap-1 text-yellow-400 text-lg">
-              <svg width="20" height="20" fill="currentColor" viewBox="0 0 20 20"><path d="M10 15l-5.878 3.09 1.122-6.545L.488 6.91l6.561-.955L10 0l2.951 5.955 6.561.955-4.756 4.635 1.122 6.545z"/></svg>
-              <span>4.9</span>
-            </div>
-          </div>
-          <div class="card-bg-3 rounded-xl card-ani p-6 flex flex-col items-center text-center">
-            <div class="text-3xl font-extrabold text-blue-700 mb-1">1200+</div>
-            <div class="text-gray-600 text-sm mb-2">服务企业与开发者</div>
-            <div class="flex items-center justify-center gap-1 text-yellow-400 text-lg">
-              <svg width="20" height="20" fill="currentColor" viewBox="0 0 20 20"><path d="M10 15l-5.878 3.09 1.122-6.545L.488 6.91l6.561-.955L10 0l2.951 5.955 6.561.955-4.756 4.635 1.122 6.545z"/></svg>
-              <span>4.8</span>
-            </div>
-          </div>
-          <div class="card-bg-2 rounded-xl card-ani p-6 flex flex-col items-center text-center">
-            <div class="text-3xl font-extrabold text-blue-700 mb-1">99.97%</div>
-            <div class="text-gray-600 text-sm mb-2">好评率</div>
-            <div class="flex items-center justify-center gap-1 text-yellow-400 text-lg">
-              <svg width="20" height="20" fill="currentColor" viewBox="0 0 20 20"><path d="M10 15l-5.878 3.09 1.122-6.545L.488 6.91l6.561-.955L10 0l2.951 5.955 6.561.955-4.756 4.635 1.122 6.545z"/></svg>
-              <span>5.0</span>
-            </div>
-          </div>
-        </div>
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div class="card-bg-1 rounded-xl card-ani p-6 flex flex-col items-start">
-            <div class="flex items-center mb-2">
-              <img src="https://randomuser.me/api/portraits/men/32.jpg" alt="用户头像" class="w-10 h-10 rounded-full mr-3"/>
-              <div>
-                <div class="font-bold text-blue-700">李先生（企业IT负责人）</div>
-                <div class="text-gray-500 text-xs">2025-05-12</div>
-              </div>
-            </div>
-            <div class="text-gray-700 text-sm">"ResendMail让我们的通知邮件送达率提升到99%以上，API切换和反垃圾功能非常实用，极大提升了运营效率！"</div>
-          </div>
-          <div class="card-bg-1 rounded-xl card-ani p-6 flex flex-col items-start">
-            <div class="flex items-center mb-2">
-              <img src="https://randomuser.me/api/portraits/women/44.jpg" alt="用户头像" class="w-10 h-10 rounded-full mr-3"/>
-              <div>
-                <div class="font-bold text-blue-700">王女士（独立开发者）</div>
-                <div class="text-gray-500 text-xs">2025-05-08</div>
-              </div>
-            </div>
-            <div class="text-gray-700 text-sm">"批量群发和敏感词混淆功能很强大，界面美观，操作简单，值得推荐！"</div>
-          </div>
-        </div>
-      </div>
-    </section>
-    <div class="section-divider"></div>
-    <!-- 技术支撑区 -->
-    <section id="tech" class="section-tech mb-16">
-      <!-- 技术亮点卡片网格 -->
-      <div class="mb-10">
-        <h2 class="text-xl font-bold text-blue-600 mb-6">技术亮点</h2>
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div class="card-bg-2 rounded-xl card-ani p-6 flex flex-col items-start">
-            <div class="bg-blue-100 p-2 rounded-full mb-3 svg-ani"><svg width="28" height="28" fill="none" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="4" stroke="#2563eb" stroke-width="2"/></svg></div>
-            <div class="font-bold text-lg mb-1">Resend API深度集成</div>
-            <div class="text-gray-700 text-sm">多账号自动切换，突破平台配额瓶颈。</div>
-          </div>
-          <div class="card-bg-3 rounded-xl card-ani p-6 flex flex-col items-start">
-            <div class="bg-blue-100 p-2 rounded-full mb-3 svg-ani"><svg width="28" height="28" fill="none" viewBox="0 0 24 24"><path d="M12 4v16M4 12h16" stroke="#2563eb" stroke-width="2"/></svg></div>
-            <div class="font-bold text-lg mb-1">多重反垃圾机制</div>
-            <div class="text-gray-700 text-sm">敏感词混淆、HTML实体加密、零宽字符插入、同形字替换等多策略并用。</div>
-          </div>
-          <div class="card-bg-2 rounded-xl card-ani p-6 flex flex-col items-start">
-            <div class="bg-blue-100 p-2 rounded-full mb-3 svg-ani"><svg width="28" height="28" fill="none" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke="#2563eb" stroke-width="2"/></svg></div>
-            <div class="font-bold text-lg mb-1">高兼容性模板</div>
-            <div class="text-gray-700 text-sm">邮件模板兼容主流邮箱客户端（QQ邮箱、Outlook、Gmail等），视觉美观，结构清晰。</div>
-          </div>
-          <div class="card-bg-3 rounded-xl card-ani p-6 flex flex-col items-start">
-            <div class="bg-blue-100 p-2 rounded-full mb-3 svg-ani"><svg width="28" height="28" fill="none" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="4" stroke="#2563eb" stroke-width="2"/></svg></div>
-            <div class="font-bold text-lg mb-1">响应式UI与交互</div>
-            <div class="text-gray-700 text-sm">前端采用卡片化、圆角、渐变等现代设计，移动端体验优秀。</div>
-          </div>
-        </div>
-      </div>
-      <!-- 安全与合规、未来可扩展性双卡片 -->
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div class="card-bg-2 rounded-xl card-ani p-6 flex flex-col items-start hover:shadow-2xl transition mb-6 md:mb-0">
-          <h3 class="text-lg font-bold text-blue-600 mb-2">安全与合规</h3>
-          <ul class="list-disc list-inside text-gray-700 text-sm space-y-1">
-            <li>邮件内容加密与混淆，降低被拦截风险</li>
-            <li>支持敏感词自定义，灵活应对政策变化</li>
-            <li>严格隐私保护，收件人信息仅用于投递</li>
-          </ul>
-        </div>
-        <div class="card-bg-3 rounded-xl card-ani p-6 flex flex-col items-start hover:shadow-2xl transition">
-          <h3 class="text-lg font-bold text-blue-600 mb-2">未来可扩展性</h3>
-          <ul class="list-disc list-inside text-gray-700 text-sm space-y-1">
-            <li>支持更多邮件服务商API接入</li>
-            <li>可扩展第三方CRM、营销平台集成</li>
-            <li>支持定制化模板、数据报表、自动化触发等高级功能</li>
-          </ul>
-        </div>
-      </div>
-    </section>
-    <div class="section-divider"></div>
-    <!-- 应用场景区 -->
-    <section id="scene" class="section-scene mb-16">
-      <!-- 适用场景卡片网格 -->
-      <div class="mb-10">
-        <h2 class="text-xl font-bold text-blue-600 mb-6">适用场景</h2>
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div class="card-bg-2 rounded-xl card-ani p-6 flex flex-col items-start"><div class="font-bold text-lg mb-1">企业/组织通知</div><div class="text-gray-700 text-sm">大批量通知、公告、节日问候等场景，保障高送达率。</div></div>
-          <div class="card-bg-3 rounded-xl card-ani p-6 flex flex-col items-start"><div class="font-bold text-lg mb-1">会员营销推广</div><div class="text-gray-700 text-sm">会员营销、活动推广、优惠券发放，精准触达目标用户。</div></div>
-          <div class="card-bg-2 rounded-xl card-ani p-6 flex flex-col items-start"><div class="font-bold text-lg mb-1">系统自动提醒</div><div class="text-gray-700 text-sm">注册激活、密码找回、系统自动提醒等自动化场景。</div></div>
-          <div class="card-bg-3 rounded-xl card-ani p-6 flex flex-col items-start"><div class="font-bold text-lg mb-1">会议/活动邀约</div><div class="text-gray-700 text-sm">批量邀请函、活动通知，提升组织效率。</div></div>
-          <div class="card-bg-2 rounded-xl card-ani p-6 flex flex-col items-start"><div class="font-bold text-lg mb-1">高送达率需求</div><div class="text-gray-700 text-sm">任何需要高送达率、低垃圾判定的邮件群发场景。</div></div>
-          <div class="card-bg-3 rounded-xl card-ani p-6 flex flex-col items-start"><div class="font-bold text-lg mb-1">品牌宣传/新品发布</div><div class="text-gray-700 text-sm">批量推送品牌资讯、新品上市、市场活动等，提升品牌影响力。</div></div>
-        </div>
-      </div>
-      <!-- 合作伙伴/媒体LOGO墙 -->
-      <div>
-        <h2 class="text-xl font-bold text-blue-600 mb-6">合作伙伴与媒体报道</h2>
-        <div class="grid grid-cols-2 md:grid-cols-4 gap-6 items-center justify-center">
-          <div class="flex flex-col items-center">
-            <img src="https://cdn.jsdelivr.net/gh/HiSixcc/ResendMail/assets/logo-aliyun.png" alt="阿里云" class="h-10 mb-2"/>
-            <span class="text-xs text-gray-500">阿里云</span>
-          </div>
-          <div class="flex flex-col items-center">
-            <img src="https://cdn.jsdelivr.net/gh/HiSixcc/ResendMail/assets/logo-csdn.png" alt="CSDN" class="h-10 mb-2"/>
-            <span class="text-xs text-gray-500">CSDN</span>
-          </div>
-          <div class="flex flex-col items-center">
-            <img src="https://cdn.jsdelivr.net/gh/HiSixcc/ResendMail/assets/logo-qqmail.png" alt="QQ邮箱" class="h-10 mb-2"/>
-            <span class="text-xs text-gray-500">QQ邮箱</span>
-          </div>
-          <div class="flex flex-col items-center">
-            <img src="https://cdn.jsdelivr.net/gh/HiSixcc/ResendMail/assets/logo-huxiu.png" alt="虎嗅" class="h-10 mb-2"/>
-            <span class="text-xs text-gray-500">虎嗅</span>
-          </div>
-        </div>
-      </div>
-    </section>
-    <div class="section-divider"></div>
-    <!-- 用户支持区 -->
-    <section id="support" class="section-support mb-8">
-      <!-- FAQ/常见问题区块 -->
-      <div class="mb-10">
-        <h2 class="text-xl font-bold text-blue-600 mb-6">常见问题 FAQ</h2>
-        <div class="space-y-4">
-          <details class="card-bg-1 rounded-xl card-ani p-5 group">
-            <summary class="font-semibold text-blue-700 cursor-pointer outline-none focus:ring-2 focus:ring-blue-400">ResendMail 支持哪些邮件服务商？</summary>
-            <div class="text-gray-700 text-sm mt-2">目前支持 Resend API，未来将支持更多主流邮件服务商（如SendGrid、Mailgun等）。</div>
-          </details>
-          <details class="card-bg-2 rounded-xl card-ani p-5 group">
-            <summary class="font-semibold text-blue-700 cursor-pointer outline-none focus:ring-2 focus:ring-blue-400">如何保证邮件不会被判为垃圾邮件？</summary>
-            <div class="text-gray-700 text-sm mt-2">内置多重反垃圾机制：敏感词混淆、HTML实体加密、零宽字符插入、同形字替换等，并支持自定义敏感词。</div>
-          </details>
-          <details class="card-bg-3 rounded-xl card-ani p-5 group">
-            <summary class="font-semibold text-blue-700 cursor-pointer outline-none focus:ring-2 focus:ring-blue-400">如何配置多个API账号？</summary>
-            <div class="text-gray-700 text-sm mt-2">在worker.js顶部RESEND_ACCOUNTS配置区添加API Key与域名即可，系统自动轮询分配。</div>
-          </details>
-          <details class="card-bg-1 rounded-xl card-ani p-5 group">
-            <summary class="font-semibold text-blue-700 cursor-pointer outline-none focus:ring-2 focus:ring-blue-400">支持哪些群发场景？</summary>
-            <div class="text-gray-700 text-sm mt-2">支持企业通知、会员营销、系统提醒、会议邀约等所有需要高送达率的邮件群发场景。</div>
-          </details>
-          <details class="card-bg-2 rounded-xl card-ani p-5 group">
-            <summary class="font-semibold text-blue-700 cursor-pointer outline-none focus:ring-2 focus:ring-blue-400">如何保障数据安全与隐私？</summary>
-            <div class="text-gray-700 text-sm mt-2">所有收件人信息仅用于邮件投递，绝不存储或泄露，严格遵守隐私保护政策。</div>
-          </details>
-        </div>
-      </div>
-      <!-- 联系方式/底部品牌标语 -->
-      <div class="text-center mt-8 fade-in-up" style="animation-delay:0.6s;">
-        <span class="inline-block bg-blue-600 text-white text-lg font-bold px-6 py-3 rounded-full shadow-lg brand-btn-ani">ResendMail 智能群发邮件大师，让每一封邮件都安全、智能、精准地送达您的目标用户！</span>
-        <div class="mt-4 text-gray-500 text-sm">如有疑问请联系：<a href="mailto:admin@ntun.cn" class="underline text-blue-600">admin@ntun.cn</a></div>
-      </div>
-    </section>
-  </main>
-  <footer class="w-full text-center text-gray-400 py-6 text-sm">&copy; 2025 ResendMail. All rights reserved. &nbsp;|&nbsp; <a href="https://github.com/HiSixcc/ResendMail" class="github-link-footer" target="_blank" rel="noopener noreferrer">GitHub开源仓库</a></footer>
-</body>
-</html>`;
+      `;
+      
+      // 插入到HTML尾部或适当位置
+      if (html.indexOf('</body>') !== -1) {
+        return html.replace('</body>', hiddenText + '</body>');
+      } else {
+        return html + hiddenText;
+      }
+    }
+    
+    return html;
+  },
+  
+  /**
+   * 混淆URL链接，减少被检测为垃圾邮件的概率
+   * @param {string} html - HTML内容
+   * @returns {string} - 处理后的HTML
+   * @private
+   */
+  _obfuscateUrls(html) {
+    if (!html) return html;
+    
+    // 查找所有链接标签
+    return html.replace(/<a\s+(?:[^>]*?\s+)?href=(["\'])(https?:\/\/[^"\']+)\1/gi, (match, quote, url) => {
+      // 跳过已处理的链接
+      if (match.includes('data-obfuscated')) {
+        return match;
+      }
+      
+      // 简单混淆: 使用css display属性拆分URL显示
+      const urlParts = url.replace(/^https?:\/\//i, '').split('.');
+      
+      if (urlParts.length < 2) {
+        return match; // 不是标准域名格式
+      }
+      
+      // 创建混淆显示
+      const domain = urlParts[0];
+      const tld = urlParts.slice(1).join('.');
+      
+      // 构建新的链接显示
+      const displayText = `<span>${domain}</span><span style="display:inline">.</span><span>${tld}</span>`;
+      
+      // 替换原链接文本 (保留href原始值)
+      return match.replace(/>.*?<\/a>/i, ` data-obfuscated="true">${displayText}</a>`);
+    });
+  },
+  
+  /**
+   * 插入隐藏的"诱饵"内容，迷惑垃圾邮件检测系统
+   * @param {string} html - 原始HTML
+   * @param {number} strength - 加密强度
+   * @returns {string} - 添加诱饵后的HTML
+   * @private
+   */
+  _insertHiddenBaitContent(html, strength) {
+    // 如果HTML内容为空，则直接返回
+    if (!html) return html;
+    
+    // 垃圾邮件检测系统常用的关键词列表
+    const spamWords = [
+      'discount', 'free', 'offer', 'limited', 'exclusive', 'guaranteed', 
+      'money', 'price', 'bonus', 'credit', 'subscribe', 'lottery', 'prize', 
+      'congratulations', 'winner', 'promotion', 'opportunity', 'investment', 
+      'beneficiary', 'confidential', 'urgent', 'approved', 'confirmed'
+    ];
+    
+    // 确定是否添加诱饵内容(根据强度)
+    if (Math.random() > (strength / 15)) {
+      return html; // 低强度情况下跳过
+    }
+    
+    // 随机选择1到3个关键词
+    const keywordCount = 1 + Math.floor(Math.random() * 3);
+    const selectedKeywords = [];
+    
+    for (let i = 0; i < keywordCount; i++) {
+      const randomIndex = Math.floor(Math.random() * spamWords.length);
+      selectedKeywords.push(spamWords[randomIndex]);
+    }
+    
+    // 构建诱饵内容
+    let baitContent = selectedKeywords.join(' ');
+    
+    // 隐藏技术列表
+    const hidingTechniques = [
+      // 方法1：使用CSS隐藏
+      (content) => `<div style="display:none !important;visibility:hidden !important;">${content}</div>`,
+      
+      // 方法2：使用极小的字体大小
+      (content) => `<div style="font-size:0.01px;color:transparent;">${content}</div>`,
+      
+      // 方法3：使用HTML注释 (在邮件客户端中可能会被显示)
+      (content) => `<!-- ${content} -->`,
+      
+      // 方法4：使用z-index将内容放在其他内容下方
+      (content) => `<div style="position:absolute;z-index:-1000;opacity:0.01;">${content}</div>`,
+      
+      // 方法5：使用文本颜色与背景颜色相同
+      (content) => `<div style="color:#FFFFFF;background-color:#FFFFFF;">${content}</div>`
+    ];
+    
+    // 随机选择一种隐藏技术
+    const technique = hidingTechniques[Math.floor(Math.random() * hidingTechniques.length)];
+    const hiddenContent = technique(baitContent);
+    
+    // 将诱饵内容插入到HTML中
+    if (html.indexOf('</body>') !== -1) {
+      // 如果HTML包含body标签，则在body结束前插入
+      return html.replace('</body>', hiddenContent + '</body>');
+    } else {
+      // 否则直接添加到HTML结尾
+      return html + hiddenContent;
+    }
+  },
+  
+  /**
+   * 获取随机零宽字符
+   * @returns {string} - 随机零宽字符
+   * @private
+   */
+  _getRandomZeroWidthChar() {
+    // 零宽字符数组
+    const zeroWidthChars = [
+      '\u200B', // 零宽空格
+      '\u200C', // 零宽非连接符
+      '\u200D', // 零宽连接符
+      '\u2060', // 单词连接符
+      '\u2061', // 函数应用
+      '\u2062', // 不可见乘号
+      '\u2063', // 不可见分隔符
+      '\u2064', // 不可见加号
+      '\uFEFF'  // 零宽非断空格
+    ];
+    
+    // 随机返回一个零宽字符
+    return zeroWidthChars[Math.floor(Math.random() * zeroWidthChars.length)];
+  },
+
+  /**
+   * 在HTML中插入零宽字符，增加反垃圾检测能力
+   * @param {string} html - 原始HTML
+   * @param {number} strength - 加密强度
+   * @returns {string} - 处理后的HTML
+   * @private
+   */
+  _insertZeroWidthCharsToHtml(html, strength) {
+    // 使用正则表达式找出文本节点并插入零宽字符
+    // 匹配任意标签之间的文本内容
+    return html.replace(/(?<=>)([^<]+)(?=<)/g, (match) => {
+      return this._insertZeroWidthCharsIntoPlainText(match, strength);
+    });
+  },
+  
+  /**
+   * 对HTML中的文本应用Unicode字符替换
+   * @param {string} html - 原始HTML
+   * @param {number} strength - 加密强度
+   * @returns {string} - 处理后的HTML
+   * @private
+   */
+  _applyUnicodeSubstitutionToHtml(html, strength) {
+    // 使用正则表达式找出文本节点并应用Unicode替换
+    return html.replace(/(?<=>)([^<]+)(?=<)/g, (match) => {
+      return this._applyUnicodeSubstitutionToPlainText(match, strength);
+    });
+  },
+  
+  /**
+   * 应用HTML结构混淆
+   * @param {string} html - 原始HTML内容
+   * @param {number} strength - 加密强度
+   * @returns {string} - 混淆后的HTML内容
+   * @private
+   */
+  _applyHtmlStructureMixing(html, strength) {
+    // 使用正则表达式查找文本节点并进行分割包装
+    return html.replace(/(?<=>)([^<]+)(?=<)/g, (match) => {
+      // 如果文本太短或随机值不满足条件，不进行处理
+      if (match.length < 5 || Math.random() > (strength / 15)) {
+        return match;
+      }
+      
+      // 生成随机标签名和类名
+      const tagName = Math.random() > 0.5 ? 'span' : 'font';
+      const generateRandomClass = () => {
+        const chars = 'abcdefghijklmnopqrstuvwxyz';
+        const length = 3 + Math.floor(Math.random() * 5);
+        let result = 'tx_';
+        for (let i = 0; i < length; i++) {
+          result += chars.charAt(Math.floor(Math.random() * chars.length));
+        }
+        return result;
+      };
+      
+      // 分割文本并添加标签
+      let result = '';
+      let remainingText = match;
+      
+      while (remainingText.length > 0) {
+        // 决定当前片段长度
+        const segmentLength = 1 + Math.floor(Math.random() * Math.min(5, remainingText.length));
+        const segment = remainingText.substring(0, segmentLength);
+        
+        // 决定是否包装当前片段
+        if (Math.random() < (strength / 15)) {
+          result += `<${tagName} class="${generateRandomClass()}">${segment}</${tagName}>`;
+        } else {
+          result += segment;
+        }
+      
+        // 如果启用，偶尔插入零宽字符
+        if (CONFIG.CONTENT_ENCRYPTION.ENABLE_ZERO_WIDTH_CHARS && Math.random() < (strength / 20)) {
+          result += this._getRandomZeroWidthChar();
+        }
+        
+        // 更新剩余文本
+        remainingText = remainingText.substring(segmentLength);
+      }
+      
+      return result;
+    });
+  },
+  
+  /**
+   * 向HTML添加随机样式，使内容更难被垃圾邮件过滤器识别
+   * @param {string} html - 原始HTML
+   * @param {number} strength - 加密强度
+   * @returns {string} - 添加样式后的HTML
+   * @private
+   */
+  _addRandomStyles(html, strength) {
+    // 生成随机类名
+    const generateRandomClassName = () => {
+      const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ';
+      const length = 5 + Math.floor(Math.random() * 5);
+      let result = '';
+      for (let i = 0; i < length; i++) {
+        result += chars.charAt(Math.floor(Math.random() * chars.length));
+      }
+      return 'e' + result; // 确保类名以字母开头
+    };
+    
+    // 创建随机类样式
+    const classCount = Math.floor(strength / 2) + 1;
+    let cssText = '';
+    const randomClasses = [];
+    
+    for (let i = 0; i < classCount; i++) {
+      const className = generateRandomClassName();
+      randomClasses.push(className);
+      
+      // 生成随机样式属性
+      cssText += `.${className} {`;
+      cssText += 'display: inline !important;';
+      
+      // 随机添加其他样式
+      if (Math.random() < 0.5) cssText += 'font-style: normal !important;';
+      if (Math.random() < 0.5) cssText += 'font-weight: normal !important;';
+      if (Math.random() < 0.5) cssText += 'text-decoration: none !important;';
+      if (Math.random() < 0.5) cssText += 'color: inherit !important;';
+      
+      cssText += '}\n';
+    }
+    
+    // 创建style标签
+    const styleTag = `<style type="text/css">${cssText}</style>`;
+    
+    // 插入到HTML头部
+    if (html.indexOf('<head>') !== -1) {
+      return html.replace('<head>', `<head>${styleTag}`);
+    } else if (html.indexOf('<html>') !== -1) {
+      return html.replace('<html>', `<html><head>${styleTag}</head>`);
+    } else {
+      return styleTag + html;
+    }
+  },
+  
+  /**
+   * 应用提供商特定优化
+   * @param {Object} emailData - 邮件数据
+   * @param {string} provider - 提供商名称
+   * @returns {Object} - 处理后的邮件数据
+   * @private
+   */
+  _applyProviderSpecificOptimization(emailData, provider) {
+    // 检查是否有提供商的配置
+    if (!CONFIG.PROVIDER_DETECTION.DEFAULT_PROVIDERS[provider]) {
+      console.warn(`No provider configuration found for ${provider}, using default settings`);
+      return emailData;
+    }
+    
+    const providerInfo = {
+      providerName: provider,
+      config: CONFIG.PROVIDER_DETECTION.DEFAULT_PROVIDERS[provider].config || {}
+    };
+    
+    // 克隆邮件数据以避免修改原始对象
+    const optimizedData = JSON.parse(JSON.stringify(emailData));
+    
+    // 应用提供商特定处理
+    if (providerInfo.config.specialProcessing) {
+      providerInfo.config.specialProcessing.forEach(process => {
+        switch (process) {
+          case 'normalize-html':
+            // 标准化HTML，删除可能导致问题的特殊标签
+            if (optimizedData.html) {
+              // 移除scripts和危险属性
+              optimizedData.html = optimizedData.html
+                .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+                .replace(/on\w+\s*=\s*(['"])[\s\S]*?\1/g, '');
+            }
+            break;
+            
+          case 'simplify-css':
+            // 简化内联CSS样式
+            if (optimizedData.html) {
+              optimizedData.html = optimizedData.html
+                .replace(/style\s*=\s*(['"])[^\1]*?\1/gi, (match) => {
+                  // 保留必要的样式属性，移除复杂属性
+                  return match.replace(/position\s*:\s*[^;]+;?/gi, '')
+                              .replace(/z-index\s*:\s*[^;]+;?/gi, '');
+                });
+            }
+            break;
+            
+          case 'enforce-text-content':
+            // 确保有纯文本版本
+            if (optimizedData.html && !optimizedData.text) {
+              // 简单的从HTML提取文本
+              optimizedData.text = optimizedData.html
+                .replace(/<[^>]*>/g, ' ')
+                .replace(/\s+/g, ' ')
+                .trim();
+            }
+            break;
+            
+          // 可添加更多特殊处理逻辑
+        }
+      });
+    }
+    
+    return optimizedData;
+  },
+  
+  /**
+   * 在纯文本中应用Unicode字符替换，保护中文字符
+   * @param {string} text - 原始文本
+   * @param {number} strength - 加密强度
+   * @returns {string} - 替换后的文本
+   * @private
+   */
+  _applyUnicodeSubstitutionWithChineseProtection(text, strength) {
+    if (!text) return text;
+    
+    // 是否需要保护中文字符
+    if (!CONFIG.CONTENT_ENCRYPTION.PROTECT_CHINESE_CHARACTERS) {
+      return this._applyUnicodeSubstitutionToPlainText(text, strength);
+    }
+    
+    // 中文字符范围
+    const chineseCharRegex = /[\u4e00-\u9fa5]/;
+    
+    let result = '';
+    
+    // 遍历每个字符
+    for (let i = 0; i < text.length; i++) {
+      const char = text[i];
+      
+      // 中文字符不替换
+      if (chineseCharRegex.test(char)) {
+        result += char;
+        continue;
+      }
+      
+      // 对非中文字符应用正常的Unicode替换
+      const lowerChar = char.toLowerCase();
+      
+      // 根据加密强度决定替换概率
+      const charMap = {
+        'a': ['а', 'ａ', 'ɑ', 'α'],
+        'e': ['е', 'ｅ', 'ε', 'ē'],
+        'o': ['о', 'ｏ', 'ο', 'ō'],
+        'p': ['р', 'ｐ', 'ρ'],
+        'c': ['с', 'ｃ', 'ϲ'],
+        'x': ['х', 'ｘ', 'χ'],
+        'y': ['у', 'ｙ', 'γ'],
+        'i': ['і', 'ｉ', 'ι'],
+        's': ['ѕ', 'ｓ'],
+        'b': ['ь', 'ｂ'],
+        'd': ['ԁ', 'ｄ'],
+        'g': ['ɡ', 'ｇ'],
+        'j': ['ј', 'ｊ'],
+        'l': ['ӏ', 'ｌ'],
+        'n': ['ո', 'ｎ'],
+        'r': ['г', 'ｒ'],
+        't': ['т', 'ｔ'],
+        'u': ['ս', 'ｕ']
+      };
+      
+      if (charMap[lowerChar] && Math.random() < (strength / 15)) {
+        // 使用映射字符替换
+        const mappedChars = charMap[lowerChar];
+        const replacement = mappedChars[Math.floor(Math.random() * mappedChars.length)];
+        
+        // 如果原字符是大写，尝试将替换字符转换为大写
+        if (char !== lowerChar) {
+          result += replacement.toUpperCase();
+        } else {
+          result += replacement;
+        }
+      } else {
+        // 保持原字符不变
+        result += char;
+      }
+    }
+    
+    return result;
+  }
+};
+
+// 修改错误响应函数，添加CORS头
+function errorResponse(error, code, status = 400, details = null, suggestion = null) {
+  const errorData = {
+    error,
+    code,
+    statusCode: status
+  };
+
+  if (details) {
+    errorData.details = details;
+  }
+
+  if (suggestion) {
+    errorData.suggestion = suggestion;
+  }
+
+  return new Response(JSON.stringify(errorData), {
+    status,
+    headers: {
+      "Content-Type": "application/json",
+      ...CORS_HEADERS
+    }
+  });
 }
+
+// 成功响应函数，添加CORS头
+function successResponse(data) {
+  return new Response(JSON.stringify(data), {
+    status: 200,
+    headers: {
+      "Content-Type": "application/json",
+      ...CORS_HEADERS
+    }
+  });
+}
+
+// 添加批量邮件处理函数
+async function handleBatchSendEmail(request) {
+  try {
+    // 获取授权头
+    const authHeader = request.headers.get("Authorization");
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      return errorResponse(
+        "缺少API密钥",
+        "MISSING_API_KEY",
+        401,
+        null,
+        "请在Authorization头中提供有效的API密钥"
+      );
+    }
+
+    // 提取API密钥
+    const apiKey = authHeader.substring(7);
+    
+    // 解析请求体
+    let batchRequests;
+    try {
+      batchRequests = await request.json();
+      
+      // 确保请求是一个数组
+      if (!Array.isArray(batchRequests)) {
+        return errorResponse(
+          "批量发送请求必须是一个数组",
+          "INVALID_FORMAT",
+          400,
+          null,
+          "请提供邮件对象数组"
+        );
+      }
+      
+      // 检查批量请求数量限制
+      if (batchRequests.length > 100) {
+        return errorResponse(
+          "批量发送请求数量超过限制",
+          "BATCH_LIMIT_EXCEEDED",
+          400,
+          null,
+          "批量发送最多支持100个邮件"
+        );
+      }
+      
+      if (batchRequests.length === 0) {
+        return errorResponse(
+          "批量发送请求为空",
+          "EMPTY_BATCH",
+          400,
+          null,
+          "请提供至少一个邮件对象"
+        );
+      }
+    } catch (error) {
+      return errorResponse(
+        "无效的JSON格式",
+        "INVALID_JSON",
+        400,
+        error.message,
+        "请确保请求体是有效的JSON格式"
+      );
+    }
+
+    console.log(`[handleBatchSendEmail] 收到批量发送邮件请求，共${batchRequests.length}封邮件`);
+
+    // 验证每个请求
+    const processedBatch = [];
+    const validationErrors = [];
+    
+    for (let i = 0; i < batchRequests.length; i++) {
+      const emailRequest = batchRequests[i];
+      
+      // 检查必填字段
+      if (!emailRequest.to) {
+        validationErrors.push({
+          index: i,
+          error: "缺少收件人(to)字段",
+          code: "MISSING_REQUIRED_FIELD"
+        });
+        continue;
+      }
+      
+      if (!emailRequest.from) {
+        validationErrors.push({
+          index: i,
+          error: "缺少发件人(from)字段",
+          code: "MISSING_REQUIRED_FIELD"
+        });
+        continue;
+      }
+      
+      if (!emailRequest.subject) {
+        validationErrors.push({
+          index: i,
+          error: "缺少主题(subject)字段",
+          code: "MISSING_REQUIRED_FIELD"
+        });
+        continue;
+      }
+      
+      if (!emailRequest.html && !emailRequest.text) {
+        validationErrors.push({
+          index: i,
+          error: "缺少内容(html或text)字段",
+          code: "MISSING_REQUIRED_FIELD"
+        });
+        continue;
+      }
+      
+      // 应用内容加密
+      let encryptedData = emailRequest;
+      if (CONFIG.ENABLE_CONTENT_ENCRYPTION && EmailContentEncryption) {
+        try {
+          encryptedData = EmailContentEncryption.encryptEmailContent(emailRequest);
+          console.log(`[handleBatchSendEmail] 邮件${i}已应用内容加密`);
+        } catch (error) {
+          console.error(`[handleBatchSendEmail] 应用内容加密失败:`, error);
+          // 加密失败时使用原始数据
+        }
+      }
+      
+      // 添加到处理后的批量请求中
+      processedBatch.push(encryptedData);
+    }
+    
+    // 如果有验证错误，返回错误
+    if (validationErrors.length > 0) {
+      return errorResponse(
+        "批量请求数据验证失败",
+        "BATCH_VALIDATION_FAILED",
+        400,
+        validationErrors,
+        "请检查请求参数并修正错误"
+      );
+    }
+    
+    console.log('[handleBatchSendEmail] 准备转发请求到Resend API...');
+
+    // 实际发送到Resend API
+    try {
+      // 构建发送到Resend API的请求
+      const resendResponse = await fetch(RESEND_BATCH_API_ENDPOINT, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${apiKey}`
+        },
+        body: JSON.stringify(processedBatch)
+      });
+      
+      console.log(`[handleBatchSendEmail] Resend API响应状态: ${resendResponse.status}`);
+      
+      // 解析Resend响应
+      let resendResult;
+      try {
+        resendResult = await resendResponse.json();
+      } catch (error) {
+        console.error('[handleBatchSendEmail] 无法解析Resend API响应:', error);
+        return errorResponse(
+          "无法解析Resend API响应",
+          "UPSTREAM_ERROR",
+          500,
+          { status: resendResponse.status, statusText: resendResponse.statusText },
+          "请联系Resend API支持"
+        );
+      }
+      
+      // 检查响应状态
+      if (!resendResponse.ok) {
+        console.error('[handleBatchSendEmail] Resend API返回错误:', resendResult);
+        
+        // 处理常见错误情况
+        if (resendResponse.status === 429) {
+          return errorResponse(
+            "速率限制",
+            "RATE_LIMIT_EXCEEDED",
+            429,
+            resendResult.message || "您已达到Resend API的速率限制",
+            "请稍后再试或切换到其他账号"
+          );
+        } else if (resendResponse.status === 403 || resendResponse.status === 401) {
+          return errorResponse(
+            "API密钥无效或权限不足",
+            "INVALID_API_KEY",
+            403,
+            resendResult.message,
+            "请检查您的API密钥是否正确且具有发送权限"
+          );
+        } else {
+          return errorResponse(
+            "批量发送失败",
+            "UPSTREAM_ERROR",
+            resendResponse.status,
+            resendResult.message || "未知错误",
+            "请检查API密钥和请求参数"
+          );
+        }
+      }
+      
+      console.log('[handleBatchSendEmail] 批量发送成功,Resend返回:', resendResult);
+      
+      // 返回成功响应
+      return successResponse({
+        success: true,
+        message: `成功发送${processedBatch.length}封邮件`,
+        data: resendResult
+      });
+      
+    } catch (error) {
+      console.error('[handleBatchSendEmail] 调用Resend API时发生网络错误:', error);
+      return errorResponse(
+        "与Resend API通信失败",
+        "NETWORK_ERROR",
+        500,
+        error.message,
+        "请检查网络连接后重试"
+      );
+    }
+  } catch (error) {
+    console.error("处理批量发送邮件请求时出错:", error);
+    return errorResponse(
+      "服务器内部错误",
+      "INTERNAL_ERROR",
+      500,
+      error.message,
+      "请联系系统管理员报告此问题"
+    );
+  }
+}
+
+// 添加多账号发送管理器
+async function handleMultiAccountBatchSend(request) {
+  try {
+    // 解析请求数据
+    const requestData = await request.json();
+    
+    // 确保有效的请求格式
+    if (!requestData || typeof requestData !== 'object') {
+      return errorResponse(
+        "无效的请求数据",
+        "INVALID_REQUEST",
+        400,
+        null,
+        "请提供有效的请求数据"
+      );
+    }
+    
+    // 提取必要参数
+    const { emails, accounts, batchSize = 50, rateLimit = 10 } = requestData;
+    
+    // 校验账号数组
+    if (!accounts || !Array.isArray(accounts) || accounts.length === 0) {
+      return errorResponse(
+        "缺少账号信息",
+        "MISSING_ACCOUNTS",
+        400,
+        null,
+        "请提供至少一个有效的Resend账号"
+      );
+    }
+    
+    // 校验邮件数组
+    if (!emails || !Array.isArray(emails) || emails.length === 0) {
+      return errorResponse(
+        "缺少邮件数据",
+        "MISSING_EMAILS",
+        400,
+        null,
+        "请提供至少一个邮件对象"
+      );
+    }
+    
+    console.log(`[handleMultiAccountBatchSend] 收到多账号批量发送请求，共${emails.length}封邮件，${accounts.length}个账号`);
+    
+    // 确保批量大小在有效范围内(Resend最大支持50)
+    const actualBatchSize = Math.min(50, Math.max(1, batchSize));
+    
+    // 计算发送任务分配
+    const totalEmails = emails.length;
+    const accountCount = accounts.length;
+    
+    // 创建账号队列（带权重）
+    const accountQueue = accounts.map(account => ({
+      ...account,
+      availableQuota: account.monthlyQuota || 3000, // 默认3000封(免费版)
+      dailyQuota: account.dailyQuota || 300,       // 默认300封/天
+      minuteQuota: account.minuteQuota || 10,      // 默认10封/分钟
+      weight: account.weight || 1,                 // 默认权重1
+      usedCount: 0                                 // 已使用计数器
+    }));
+    
+    // 按权重排序（高权重优先）
+    accountQueue.sort((a, b) => b.weight - a.weight);
+    
+    // 根据账号权重分配邮件
+    const distributionMap = new Map();
+    const emailBatches = [];
+    
+    // 分批处理
+    for (let i = 0; i < totalEmails; i += actualBatchSize) {
+      const batch = emails.slice(i, i + actualBatchSize);
+      emailBatches.push(batch);
+    }
+    
+    console.log(`[handleMultiAccountBatchSend] 已将${totalEmails}封邮件分为${emailBatches.length}批，每批最多${actualBatchSize}封`);
+    
+    // 智能分配批次给账号
+    emailBatches.forEach((batch, index) => {
+      // 在每个批次找出当前最优账号（考虑权重和已使用配额）
+      accountQueue.sort((a, b) => {
+        // 首先考虑是否超出分钟配额
+        if (a.usedCount >= a.minuteQuota && b.usedCount < b.minuteQuota) {
+          return 1; // b优先
+        }
+        if (a.usedCount < a.minuteQuota && b.usedCount >= b.minuteQuota) {
+          return -1; // a优先
+        }
+        
+        // 其次考虑权重和已使用数量的比例
+        const aScore = a.weight * (1 - a.usedCount / a.availableQuota);
+        const bScore = b.weight * (1 - b.usedCount / b.availableQuota);
+        return bScore - aScore;
+      });
+      
+      // 获取最优账号
+      const bestAccount = accountQueue[0];
+      
+      // 更新账号使用计数
+      bestAccount.usedCount += batch.length;
+      
+      // 记录分配结果
+      if (!distributionMap.has(bestAccount.apiKey)) {
+        distributionMap.set(bestAccount.apiKey, []);
+      }
+      distributionMap.get(bestAccount.apiKey).push({
+        batchIndex: index,
+        emails: batch
+      });
+    });
+    
+    console.log(`[handleMultiAccountBatchSend] 已将邮件批次分配至${distributionMap.size}个账号`);
+    
+    // 实际发送处理
+    const results = [];
+    const errors = [];
+    
+    // 为每个账号并行处理发送
+    const sendPromises = Array.from(distributionMap.entries()).map(async ([apiKey, batches]) => {
+      // 获取账号信息
+      const accountInfo = accounts.find(acc => acc.apiKey === apiKey);
+      if (!accountInfo) {
+        throw new Error(`找不到API密钥为 ${apiKey.substring(0, 5)}... 的账号信息`);
+      }
+      
+      console.log(`[handleMultiAccountBatchSend] 使用账号 ${accountInfo.name || apiKey.substring(0, 5)}... 处理${batches.length}个批次`);
+      
+      // 顺序处理每个批次
+      for (const batch of batches) {
+        try {
+          // 准备请求数据
+          const processedEmails = [];
+          
+          // 处理每封邮件
+          for (const email of batch.emails) {
+            // 验证必填字段
+            if (!email.to || !email.from || !email.subject || (!email.html && !email.text)) {
+              errors.push({
+                batchIndex: batch.batchIndex,
+                error: "邮件缺少必要字段",
+                email: { to: email.to, subject: email.subject }
+              });
+              continue;
+            }
+            
+            // 替换发件人域名（如果账号有指定域名）
+            let from = email.from;
+            if (accountInfo.domain) {
+              // 检查是否包含域名
+              if (from.includes('@')) {
+                if (from.includes('<')) {
+                  // 格式: "Name <email@domain.com>"
+                  from = from.replace(/<[^>]+>/, `<noreply@${accountInfo.domain}>`);
+                } else {
+                  // 格式: "email@domain.com"
+                  const nameOnly = from.split('@')[0];
+                  from = `${nameOnly}@${accountInfo.domain}`;
+                }
+              } else {
+                // 格式: "Name" - 添加域名
+                from = `${from} <noreply@${accountInfo.domain}>`;
+              }
+            }
+            
+            // 应用内容加密
+            let processedEmail = { ...email, from };
+            if (CONFIG.ENABLE_CONTENT_ENCRYPTION && EmailContentEncryption) {
+              try {
+                processedEmail = EmailContentEncryption.encryptEmailContent(processedEmail);
+              } catch (error) {
+                console.error(`[handleMultiAccountBatchSend] 应用内容加密失败:`, error);
+                // 加密失败时使用原始数据
+              }
+            }
+            
+            // 添加到批次
+            processedEmails.push(processedEmail);
+          }
+          
+          // 如果批次为空，跳过
+          if (processedEmails.length === 0) {
+            console.warn(`[handleMultiAccountBatchSend] 批次 ${batch.batchIndex} 没有有效邮件，跳过`);
+            continue;
+          }
+          
+          // 发送批次
+          console.log(`[handleMultiAccountBatchSend] 发送批次 ${batch.batchIndex}，包含 ${processedEmails.length} 封邮件`);
+          
+          // 构建发送请求
+          const response = await fetch(RESEND_BATCH_API_ENDPOINT, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${apiKey}`
+            },
+            body: JSON.stringify(processedEmails)
+          });
+          
+          // 解析响应
+          const responseData = await response.json();
+          
+          if (!response.ok) {
+            // 处理错误情况
+            console.error(`[handleMultiAccountBatchSend] 批次 ${batch.batchIndex} 发送失败:`, responseData);
+            
+            errors.push({
+              batchIndex: batch.batchIndex,
+              apiKey: apiKey.substring(0, 5) + '...',
+              error: responseData.message || responseData.error || "未知错误",
+              status: response.status
+            });
+            
+            // 如果是额度限制，标记账号不可用
+            if (response.status === 429 || response.status === 403) {
+              const account = accountQueue.find(acc => acc.apiKey === apiKey);
+              if (account) {
+                account.usedCount = account.minuteQuota; // 标记为已达上限
+                console.warn(`[handleMultiAccountBatchSend] 账号 ${accountInfo.name || apiKey.substring(0, 5)}... 已达到限制，将不再使用`);
+              }
+            }
+          } else {
+            // 成功处理
+            console.log(`[handleMultiAccountBatchSend] 批次 ${batch.batchIndex} 发送成功`);
+            results.push({
+              batchIndex: batch.batchIndex,
+              apiKey: apiKey.substring(0, 5) + '...',
+              emailCount: processedEmails.length,
+              data: responseData
+            });
+          }
+          
+          // 根据速率限制等待一段时间
+          if (rateLimit > 0) {
+            const delayMs = Math.ceil(60000 / rateLimit);
+            console.log(`[handleMultiAccountBatchSend] 等待 ${delayMs}ms 以符合速率限制`);
+            await new Promise(resolve => setTimeout(resolve, delayMs));
+          }
+        } catch (error) {
+          console.error(`[handleMultiAccountBatchSend] 处理批次 ${batch.batchIndex} 时出错:`, error);
+          errors.push({
+            batchIndex: batch.batchIndex,
+            apiKey: apiKey.substring(0, 5) + '...',
+            error: error.message,
+            stack: error.stack
+          });
+        }
+      }
+    });
+    
+    // 等待所有发送完成
+    await Promise.all(sendPromises);
+    
+    // 返回结果
+    return successResponse({
+      success: errors.length === 0,
+      totalEmails,
+      processedBatches: emailBatches.length,
+      successfulBatches: results.length,
+      failedBatches: errors.length,
+      results,
+      errors: errors.length > 0 ? errors : undefined
+    });
+  } catch (error) {
+    console.error("[handleMultiAccountBatchSend] 处理多账号批量发送请求时出错:", error);
+    return errorResponse(
+      "处理多账号批量发送请求时出错",
+      "INTERNAL_ERROR",
+      500,
+      error.message,
+      "请检查请求参数并重试"
+    );
+  }
+}
+
+// 修改 fetch 函数以支持多账号批量发送
+export default {
+  async fetch(request, env, ctx) {
+    try {
+      // 处理CORS预检请求
+      if (request.method === "OPTIONS") {
+        return new Response(null, {
+          status: 204,
+          headers: CORS_HEADERS
+        });
+      }
+
+      // 获取请求URL和路径
+      const url = new URL(request.url);
+      const path = url.pathname;
+
+      // 添加对多账号邮件批量发送的处理
+      if (path === "/api/emails/multi-account-batch" && request.method === "POST") {
+        return handleMultiAccountBatchSend(request);
+      }
+
+      // 添加对批量邮件发送的处理
+      if ((path === "/api/emails/batch" || path === "/emails/batch") && request.method === "POST") {
+        return handleBatchSendEmail(request);
+      }
+
+      // 基本API信息
+      if (path === "/api" || path === "/") {
+        return new Response(JSON.stringify({
+          name: "Resend Email API Worker",
+          version: "1.2.0",
+          status: "运行中",
+          description: "此API提供邮件发送功能，支持内容加密、多账号分发、请求验证和限流"
+        }), {
+          status: 200,
+          headers: { 
+            "Content-Type": "application/json",
+            ...CORS_HEADERS
+          }
+        });
+      }
+
+      // 处理未找到的路由
+      return new Response(JSON.stringify({
+        error: "未找到请求的资源",
+        code: "NOT_FOUND",
+        statusCode: 404,
+        suggestion: "请检查API端点是否正确"
+      }), {
+        status: 404,
+        headers: { 
+          "Content-Type": "application/json",
+          ...CORS_HEADERS
+        }
+      });
+    } catch (error) {
+      // 捕获未处理的错误
+      console.error("Worker处理请求时发生未捕获的错误:", error);
+      
+      return new Response(JSON.stringify({
+        error: "服务器内部错误",
+        code: "INTERNAL_ERROR",
+        statusCode: 500,
+        message: error.message
+      }), {
+        status: 500,
+        headers: { 
+          "Content-Type": "application/json",
+          ...CORS_HEADERS
+        }
+      });
+    }
+  },
+  // 暴露主要功能，方便前端直接调用
+  enhanceEmailContent,
+  EmailContentEncryption,
+  CONFIG
+};

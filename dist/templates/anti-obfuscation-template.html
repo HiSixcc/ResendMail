@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="zh-CN" dir="ltr" xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office">
+<head>
+    <!-- 模板元数据 - 用于模板选择系统 -->
+    <meta name="template-name" content="简约抗混淆模板">
+    <meta name="template-description" content="简约风格的抗混淆加密模板，干净清晰">
+    <meta name="template-version" content="2.0">
+    <meta name="template-content-area" content="#mail-content">
+    <meta name="template-timestamp" content="{{RANDOM_TIMESTAMP}}">
+    
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <title>{{SUBJECT}}</title>
+    
+    <!--[if mso]>
+    <style type="text/css">
+        body, table, td, th, div, p, a, h1, h2, h3, h4, h5, h6 {
+            font-family: "Microsoft YaHei", "Segoe UI", sans-serif !important;
+        }
+        table {border-collapse: collapse !important;}
+    </style>
+    <![endif]-->
+    
+    <style>
+        /* 基础重置 */
+        * {box-sizing: border-box; margin: 0; padding: 0;}
+        
+        /* 定义邮件模板中使用的颜色变量 */
+        :root {
+            --primary-color: #3A7DFF;
+            --primary-hover-color: #2563EB;
+            --primary-text-color: #1A202C;
+            --secondary-text-color: #4A5568;
+            --page-background-color: #F7FAFC;
+            --content-background: #FFFFFF;
+            --border-color: #E2E8F0;
+            --footer-text-color: #718096;
+            --footer-background: #F7FAFC;
+        }
+        
+        /* 主要样式定义 */
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, 'Helvetica Neue', sans-serif;
+            line-height: 1.5;
+            color: var(--primary-text-color);
+            background-color: var(--page-background-color);
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            -webkit-text-size-adjust: 100%;
+            -ms-text-size-adjust: 100%;
+        }
+        
+        /* 内容容器 */
+        .container {
+            width: 100%;
+            max-width: 600px;
+            margin: 20px auto;
+            background-color: var(--content-background);
+            border-radius: 6px;
+            overflow: hidden;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+        }
+        
+        /* 图片样式 */
+        img {
+            max-width: 100%;
+            height: auto;
+            display: block;
+            border: 0;
+        }
+        
+        /* 标题样式 */
+        h1 {
+            color: var(--primary-text-color);
+            font-size: 22px;
+            font-weight: 600;
+            margin: 0 0 10px 0;
+            line-height: 1.3;
+            letter-spacing: -0.01em;
+        }
+        
+        h2 {
+            color: var(--primary-text-color);
+            font-size: 18px;
+            font-weight: 600;
+            margin: 15px 0 10px 0;
+            line-height: 1.3;
+        }
+        
+        /* 段落样式 */
+        p {
+            color: var(--secondary-text-color);
+            font-size: 15px;
+            line-height: 1.6;
+            margin: 0 0 15px 0;
+        }
+        
+        /* 链接样式 */
+        a {
+            color: var(--primary-color);
+            text-decoration: none;
+        }
+        
+        a:hover {
+            text-decoration: underline;
+        }
+        
+        /* 页眉样式 */
+        .header {
+            padding: 20px 25px;
+            background-color: var(--content-background);
+            border-bottom: 1px solid var(--border-color);
+        }
+        
+        /* 内容区样式 */
+        .content {
+            padding: 30px 25px;
+            background-color: var(--content-background);
+        }
+        
+        /* 页脚样式 */
+        .footer {
+            padding: 15px 25px;
+            background-color: var(--footer-background);
+            border-top: 1px solid var(--border-color);
+            text-align: center;
+            font-size: 13px;
+            color: var(--footer-text-color);
+        }
+        
+        .footer p {
+            font-size: 13px;
+            color: var(--footer-text-color);
+            margin: 5px 0;
+        }
+        
+        /* 按钮样式 */
+        .button {
+            display: inline-block;
+            padding: 10px 20px;
+            background-color: var(--primary-color);
+            color: #ffffff !important;
+            border-radius: 4px;
+            text-decoration: none;
+            font-weight: 500;
+            margin: 10px 0;
+            text-align: center;
+            font-size: 15px;
+        }
+        
+        .button:hover {
+            background-color: var(--primary-hover-color);
+            text-decoration: none;
+        }
+        
+        /* 辅助样式 */
+        .text-center {
+            text-align: center;
+        }
+        
+        .mt-10 {
+            margin-top: 10px;
+        }
+        
+        .mb-10 {
+            margin-bottom: 10px;
+        }
+        
+        .signature {
+            margin-top: 20px;
+            padding-top: 15px;
+            border-top: 1px solid var(--border-color);
+            font-style: normal;
+            color: var(--footer-text-color);
+        }
+        
+        /* 随机化元素 - 将在运行时通过JavaScript处理 */
+        .email-container {
+            /* 基础容器样式 */
+        }
+        
+        .email-header h1 {
+            /* 标题样式 */
+        }
+        
+        .email-content p {
+            /* 段落样式 */
+        }
+        
+        /* 响应式调整 */
+        @media only screen and (max-width: 650px) {
+            .container {
+                width: 95% !important;
+                margin: 10px auto !important;
+            }
+            
+            .header, .content, .footer {
+                padding: 15px 20px !important;
+            }
+            
+            h1 {
+                font-size: 20px !important;
+            }
+            
+            p {
+                font-size: 14px !important;
+            }
+        }
+        
+        @media only screen and (max-width: 450px) {
+            .header, .content, .footer {
+                padding: 12px 15px !important;
+            }
+            
+            h1 {
+                font-size: 18px !important;
+            }
+        }
+    </style>
+</head>
+
+<body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, 'Helvetica Neue', sans-serif; line-height: 1.5; color: #333333; background-color: #f5f5f5; margin: 0; padding: 0; width: 100%;">
+    <div role="article" aria-roledescription="email" lang="zh-CN" style="font-size: 15px;">
+        <!-- 插入零宽字符 (不可见) -->
+        <span style="display:none; font-size:0; line-height:0; color:transparent; width:0; height:0; opacity:0; overflow:hidden; mso-hide:all;">&#8203;</span>
+        
+        <!-- 主容器 -->
+        <div class="container email-container" style="width: 100%; max-width: 600px; margin: 20px auto; background-color: #ffffff; border-radius: 6px; overflow: hidden; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);" data-template-version="{{RANDOM_ID_1}}">
+            <!-- 页眉 -->
+            <div class="header email-header" style="padding: 20px 25px; background-color: #ffffff; border-bottom: 1px solid #eaeaea;" data-section="header-{{RANDOM_ID_2}}">
+                <h1 style="color: #333333; font-size: 22px; font-weight: 600; margin: 0 0 10px 0; line-height: 1.3; letter-spacing: -0.01em;">{{EMAIL_TITLE}}</h1>
+                {{OPTIONAL_SUBTITLE_HTML}}
+            </div>
+            
+            <!-- 内容区域 -->
+            <div class="content email-content" id="mail-content" style="padding: 30px 25px; background-color: #ffffff;" data-section="content-{{RANDOM_ID_3}}">
+                <!-- 内容区占位符 -->
+                <p style="color: #333333; font-size: 15px; line-height: 1.6; margin: 0 0 15px 0;">{{EMAIL_GREETING}}</p>
+                
+                <div id="main-content-area" style="color: #333333; font-size: 15px; line-height: 1.6; margin-bottom: 15px;">
+                    {{EMAIL_BODY_HTML}}
+                </div>
+                
+                <!-- 可选按钮 -->
+                {{OPTIONAL_BUTTON_HTML}}
+                
+                <p style="color: #333333; font-size: 15px; line-height: 1.6; margin: 0 0 15px 0;">{{EMAIL_CLOSING}}</p>
+                
+                <!-- 可选签名 -->
+                {{OPTIONAL_SIGNATURE_HTML}}
+                
+                <!-- 插入零宽字符 (不可见) -->
+                <span style="display:none; font-size:0; line-height:0; color:transparent; width:0; height:0; opacity:0; overflow:hidden; mso-hide:all;">&#8203;{{RANDOM_ID_5}}</span>
+            </div>
+            
+            <!-- 页脚 -->
+            <div class="footer" style="padding: 15px 25px; background-color: #f8f8f8; border-top: 1px solid #eaeaea; text-align: center; font-size: 13px; color: #777777;" data-section="footer-{{RANDOM_ID_4}}">
+                <p style="font-size: 13px; color: #888888; margin: 5px 0;">{{FOOTER_TEXT}}</p>
+                <p style="font-size: 13px; color: #888888; margin: 5px 0;">&copy; {{CURRENT_YEAR}} ResendMail 智能群发邮件. All rights reserved.</p>
+                
+                <!-- 邮件ID (随机生成) -->
+                <p style="margin: 5px 0; font-size: 11px; color: #aaaaaa;">Ref: {{UNIQUE_EMAIL_ID}}</p>
+                
+                <!-- 插入零宽字符 (不可见) - 用于抗垃圾检测，对用户不可见 -->
+                <span style="display:none; font-size:0; line-height:0; color:transparent; width:0; height:0; opacity:0; overflow:hidden; mso-hide:all;">&#8203;</span>
+            </div>
+        </div>
+        
+        <!-- MSO Outlook 特殊处理 - 确保在Outlook中正确显示 -->
+        <!--[if mso]>
+        <table role="presentation" width="100%">
+            <tr>
+                <td style="text-align: center; padding: 10px; font-family: 'Microsoft YaHei', 'Segoe UI', sans-serif; font-size: 12px; color: #999999;">
+                    如果您无法正常查看此邮件，请尝试使用其他邮件客户端打开。
+                </td>
+            </tr>
+        </table>
+        <![endif]-->
+        
+        <!-- 加密标记区域 - 这些额外信息会被worker处理，用于增加每封邮件的唯一性 -->
+        <div style="display:none; visibility:hidden; max-height:0; overflow:hidden;" data-encryption-hints="true">
+            <!-- 每次发送时产生不同的模板ID，减少被识别为固定模板的可能性 -->
+            template-id: simple-{{RANDOM_ID_6}}
+            <!-- 添加当前日期作为随机特征 -->
+            encrypted: {{CURRENT_DATE}}
+            <!-- 添加额外的随机标记以增加差异性 -->
+            variation: {{RANDOM_ID_7}}-{{RANDOM_ID_8}}
+        </div>
+    </div>
+</body>
+</html> 

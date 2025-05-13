@@ -1,0 +1,3224 @@
+<!DOCTYPE html>
+<html lang="zh-CN" style="height: 100%;">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>ResendMail 智能群发邮件系统 - 发送邮件</title>
+    <link rel="stylesheet" href="../css/styles.css">
+    <!-- 直接引入富文本编辑器的CSS (如果父页面未加载) -->
+    <link rel="stylesheet" href="https://cdn.bootcdn.net/ajax/libs/quill/1.3.7/quill.snow.min.css">
+    <!-- 引入模板管理器 -->
+    <script src="../js/template-manager.js"></script>
+    <style>
+        html, body {
+            margin: 0;
+            padding: 0;
+            height: 100%;
+            width: 100%;
+        }
+        
+        body {
+            box-sizing: border-box;
+            overflow: auto;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #FFFFFF; /* var(--page-background-color) */
+            color: #1A202C; /* var(--primary-text-color) */
+        }
+        
+        .form-container {
+            padding: 30px 40px;
+            max-width: 1200px;
+            width: 100%;
+            box-sizing: border-box;
+            margin: 0 auto;
+        }
+        
+        .form-container h2 {
+            margin-bottom: 30px;
+            color: #1A202C; /* var(--primary-text-color) */
+        }
+        
+        .form-group {
+            margin-bottom: 25px;
+            width: 100%;
+        }
+        
+        .form-group input, .form-group textarea {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #E2E8F0; /* var(--border-color) */
+            border-radius: 5px;
+            font-size: 16px;
+            box-sizing: border-box;
+            transition: border-color 0.3s ease, box-shadow 0.3s ease; /* Added for focus transition */
+        }
+        
+        .form-group input:focus, .form-group textarea:focus {
+            border-color: #3A7DFF; /* var(--primary-interaction-color) */
+            box-shadow: 0 0 0 2px rgba(58, 125, 255, 0.2);
+            outline: none;
+        }
+        
+        .form-group textarea {
+            min-height: 90px;
+            resize: vertical;
+            font-family: inherit;
+            line-height: 1.5;
+        }
+        
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 500;
+            color: #1A202C; /* var(--primary-text-color) */
+        }
+        
+        .form-group small.form-text {
+            display: block;
+            margin-top: 5px;
+            color: #4A5568; /* var(--secondary-text-color) */
+            font-size: 0.8rem;
+        }
+        
+        .editor-container {
+            border: 1px solid #E2E8F0; /* var(--border-color) */
+            border-radius: 5px;
+            overflow: hidden;
+            width: 100%;
+            box-sizing: border-box;
+        }
+        
+        .submit-button {
+            margin-top: 0;
+            background-color: #3A7DFF; /* var(--primary-interaction-color) */
+            color: white;
+            border: none;
+            padding: 14px 20px; /* 与email-btn一致 */
+            border-radius: 8px;
+            font-size: 0.95rem; /* 与email-btn一致 */
+            font-weight: 600;
+            cursor: pointer;
+            transition: background-color 0.3s ease, transform 0.2s ease, box-shadow 0.3s ease;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+            position: relative;
+            overflow: hidden;
+            flex-grow: 1;  /* 让发送按钮占据更多空间 */
+            max-width: 200px; /* 限制最大宽度 */
+            text-align: center;
+            height: 50px; /* 与email-btn一致 */
+            box-sizing: border-box;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 120px; /* 与email-btn一致 */
+        }
+        
+        .submit-button:hover {
+            background-color: #2563EB; /* var(--primary-interaction-hover-color) */
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(58, 125, 255, 0.4);
+        }
+        
+        .editor-mode-switch {
+            display: flex;
+            padding: 10px;
+            border-bottom: 1px solid #E2E8F0; /* var(--border-color) */
+            background-color: #F7FAFC; /* var(--light-background-color) */
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+        
+        .editor-mode-btn {
+            padding: 8px 16px;
+            border: 1px solid transparent;
+            background: white;
+            cursor: pointer;
+            font-size: 14px;
+            border-radius: 6px;
+            transition: all 0.3s ease;
+            color: #4A5568;
+            font-weight: 500;
+            box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+        }
+        
+        .editor-mode-btn:hover {
+            background-color: #EDF2F7;
+            transform: translateY(-1px);
+        }
+        
+        .editor-mode-btn.active {
+            background-color: #3A7DFF; /* Primary color */
+            color: white;
+            font-weight: 600;
+            border-color: #3A7DFF;
+            box-shadow: 0 2px 4px rgba(58, 125, 255, 0.3);
+        }
+        
+        .editor-mode-hint {
+            margin-left: auto;
+            padding-right: 10px;
+            align-self: center;
+            color: #6B7280;
+        }
+        
+        #editor {
+            height: 300px;
+            max-height: 500px;
+        }
+        
+        @media (max-width: 768px) {
+            .form-container {
+                padding: 15px;
+                margin-top: 10px;
+            }
+            
+            .form-group label {
+                font-size: 14px;
+            }
+            
+            .editor-mode-switch {
+                flex-wrap: wrap;
+                justify-content: space-between;
+                padding: 8px;
+            }
+            
+            .editor-mode-hint {
+                width: 100%;
+                margin: 6px 0 0 0;
+                text-align: center;
+                padding: 0;
+                font-size: 12px;
+                color: #718096;
+            }
+            
+            .form-actions {
+                flex-direction: column;
+                align-items: stretch;
+                gap: 12px;
+            }
+            
+            .draft-buttons {
+                display: flex;
+                width: 100%;
+                justify-content: space-between;
+            }
+            
+            .draft-button, .draft-box-button {
+                flex: 1;
+                text-align: center;
+                font-size: 0.9rem;
+                padding: 12px 10px;
+            }
+            
+            .submit-button {
+                width: 100%;
+                max-width: none;
+                padding: 16px 20px;
+            }
+            
+            #recipients {
+                min-height: 80px;
+            }
+            
+            .col-md-6 {
+                width: 100%;
+                margin-right: 0 !important;
+                margin-bottom: 15px;
+            }
+            
+            .account-info-panel {
+                flex-direction: column;
+                gap: 10px;
+            }
+            
+            #accountsInfoRow {
+                flex-direction: column;
+                align-items: stretch;
+            }
+            
+            .account-action {
+                margin-left: 0;
+                margin-top: 10px;
+            }
+        }
+        
+        @media (max-width: 480px) {
+            .editor-container {
+                margin-bottom: 15px;
+            }
+            
+            .editor-mode-btn {
+                flex: 1;
+                text-align: center;
+                padding: 10px;
+                font-size: 14px;
+                margin: 0;
+                border-radius: 8px;
+                box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+            }
+            
+            .editor-mode-switch {
+                padding: 10px;
+                gap: 10px;
+            }
+            
+            .ql-toolbar {
+                flex-wrap: wrap;
+                justify-content: flex-start;
+            }
+            
+            .ql-formats {
+                margin-right: 5px !important;
+            }
+        }
+        
+        /* 加载区域样式 */
+        #editorLoading {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 300px;
+            background-color: #F7FAFC; /* var(--light-background-color) */
+        }
+        
+        #editorLoading .spinner {
+            border: 4px solid rgba(0, 0, 0, 0.1);
+            border-radius: 50%;
+            border-top: 4px solid #3A7DFF; /* var(--primary-interaction-color) */
+            width: 30px;
+            height: 30px;
+            animation: spin 1s linear infinite;
+            margin-bottom: 15px;
+        }
+        
+        #editorLoading .loading-text {
+            color: #4A5568; /* var(--secondary-text-color) */
+            font-size: 14px;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        /* 错误信息样式 */
+        #serviceErrorContainer {
+            display: none;
+            margin: 20px 0;
+            padding: 15px;
+            background-color: #FEF2F2;
+            border: 1px solid #FCA5A5;
+            border-radius: 5px;
+            color: #B91C1C;
+        }
+        
+        #serviceErrorContainer h3 {
+            margin-top: 0;
+            font-size: 16px;
+        }
+        
+        #serviceErrorContainer p {
+            margin: 5px 0;
+        }
+        
+        #serviceErrorContainer pre {
+            background-color: #FFEBEC;
+            padding: 10px;
+            border-radius: 4px;
+            overflow-x: auto;
+            margin: 10px 0;
+        }
+        
+        #serviceErrorContainer button {
+            background-color: #B91C1C;
+            color: white;
+            border: none;
+            padding: 8px 15px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin-top: 10px;
+            font-size: 14px;
+        }
+        
+        #serviceErrorContainer button:hover {
+            background-color: #991B1B;
+        }
+        
+        /* 诊断报告样式 */
+        #diagnosticReportContainer {
+            margin-top: 15px;
+        }
+        
+        .diagnostic-row {
+            display: flex;
+            margin-bottom: 5px;
+        }
+        
+        .diagnostic-label {
+            font-weight: 500;
+            min-width: 180px;
+        }
+        
+        .diagnostic-value {
+            flex: 1;
+        }
+        
+        .diagnostic-status-ok {
+            color: #047857;
+        }
+        
+        .diagnostic-status-error {
+            color: #B91C1C;
+        }
+        
+        /* 发送状态消息样式 */
+        .send-status-message {
+            margin-top: 10px;
+            padding: 8px 12px;
+            border-radius: 4px;
+            font-size: 14px;
+            margin-bottom: 10px;
+            text-align: center;
+        }
+        
+        .send-status-message.success {
+            background-color: #ECFDF5;
+            color: #10B981;
+            border: 1px solid #A7F3D0;
+        }
+        
+        .send-status-message.error {
+            background-color: #FEF2F2;
+            color: #EF4444;
+            border: 1px solid #FCA5A5;
+        }
+        
+        .send-status-message.warning {
+            background-color: #FFFBEB;
+            color: #F59E0B;
+            border: 1px solid #FCD34D;
+        }
+        
+        /* 动画效果 */
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .spinner {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 2px solid rgba(0, 0, 0, 0.1);
+            border-radius: 50%;
+            border-top-color: #5850EC;
+            animation: spin 1s ease-in-out infinite;
+            margin-right: 10px;
+            vertical-align: middle;
+        }
+        
+        /* 淡入淡出动画 */
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+        
+        @keyframes fadeOut {
+            from { opacity: 1; }
+            to { opacity: 0; }
+        }
+        
+        .fade-in {
+            animation: fadeIn 0.3s ease-in-out forwards;
+        }
+        
+        .fade-out {
+            animation: fadeOut 0.3s ease-in-out forwards;
+        }
+        
+        /* 发送模式选项卡样式 */
+        .send-mode-tabs {
+            display: flex;
+            border-bottom: 1px solid #e5e7eb;
+            margin-bottom: 15px;
+        }
+        
+        .send-mode-tab {
+            padding: 10px 20px;
+            background: none;
+            border: none;
+            border-bottom: 2px solid transparent;
+            cursor: pointer;
+            font-size: 14px;
+            margin-right: 10px;
+            color: #6b7280;
+        }
+        
+        .send-mode-tab.active {
+            color: #5850EC;
+            border-bottom: 2px solid #5850EC;
+            font-weight: 500;
+        }
+        
+        /* 收件人列表样式 */
+        .recipients-list {
+            border: 1px solid #e5e7eb;
+            border-radius: 5px;
+            padding: 10px;
+            margin-bottom: 10px;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        
+        .recipient-item {
+            padding: 10px;
+            border: 1px solid #e5e7eb;
+            border-radius: 5px;
+            margin-bottom: 10px;
+            background-color: #f9fafb;
+        }
+        
+        .recipient-item.error {
+            border-color: #EF4444;
+            background-color: #FEF2F2;
+        }
+        
+        .recipient-error {
+            color: #EF4444;
+            font-size: 12px;
+            margin-top: 5px;
+            padding: 5px;
+            background-color: #FEF2F2;
+            border-radius: 3px;
+            border-left: 3px solid #EF4444;
+        }
+        
+        .recipient-item:last-child {
+            margin-bottom: 0;
+        }
+        
+        .recipient-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        
+        .recipient-title {
+            font-weight: 500;
+            color: #374151;
+        }
+        
+        .recipient-remove {
+            color: #EF4444;
+            cursor: pointer;
+            background: none;
+            border: none;
+            font-size: 14px;
+        }
+        
+        .secondary-button {
+            background-color: #f3f4f6;
+            color: #374151;
+            border: 1px solid #e5e7eb;
+            border-radius: 5px;
+            padding: 8px 15px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.2s;
+        }
+        
+        .secondary-button:hover {
+            background-color: #e5e7eb;
+        }
+        
+        /* 添加高级选项相关的样式 */
+        .advanced-options {
+            border: 1px solid #e5e7eb;
+            border-radius: 5px;
+            margin-bottom: 20px;
+        }
+        
+        .advanced-options-summary {
+            padding: 12px 15px;
+            cursor: pointer;
+            font-weight: 500;
+            color: #4b5563;
+            background-color: #f9fafb;
+            border-bottom: 1px solid #e5e7eb;
+            border-radius: 5px 5px 0 0;
+        }
+        
+        .advanced-options-summary::-webkit-details-marker {
+            display: none;
+        }
+        
+        .advanced-options-summary::before {
+            content: '▶';
+            font-size: 12px;
+            margin-right: 10px;
+            color: #6b7280;
+        }
+        
+        .advanced-options[open] .advanced-options-summary::before {
+            content: '▼';
+        }
+        
+        .advanced-options-content {
+            padding: 15px;
+        }
+        
+        .form-row {
+            margin-bottom: 15px;
+        }
+        
+        .form-row:last-child {
+            margin-bottom: 0;
+        }
+        
+        .form-check {
+            display: flex;
+            align-items: flex-start;
+        }
+        
+        .form-check-input {
+            margin-top: 4px;
+            margin-right: 8px;
+        }
+        
+        .form-check-label {
+            font-weight: 500;
+        }
+        
+        .account-info-panel {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+            padding: 10px;
+            background-color: #f9fafb;
+            border-radius: 5px;
+            flex: 1;
+        }
+        
+        .account-info-item {
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .account-info-label {
+            font-size: 12px;
+            color: #6b7280;
+        }
+        
+        .account-info-value {
+            font-size: 16px;
+            font-weight: 600;
+            color: #374151;
+        }
+        
+        .account-action {
+            display: flex;
+            align-items: center;
+            margin-left: 10px;
+        }
+        
+        #accountsInfoRow {
+            display: flex;
+            align-items: center;
+            margin-top: 10px;
+        }
+        
+        .col-md-6 {
+            width: 48%;
+            display: inline-block;
+        }
+        
+        .col-md-6:nth-child(odd) {
+            margin-right: 4%;
+        }
+        
+        @media (max-width: 768px) {
+            .col-md-6 {
+                width: 100%;
+                margin-right: 0 !important;
+                margin-bottom: 15px;
+            }
+            
+            .account-info-panel {
+                flex-direction: column;
+                gap: 10px;
+            }
+            
+            #accountsInfoRow {
+                flex-direction: column;
+                align-items: stretch;
+            }
+            
+            .account-action {
+                margin-left: 0;
+                margin-top: 10px;
+            }
+        }
+        
+        .form-actions {
+            display: flex;
+            margin-top: 25px;
+            gap: 15px;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .draft-buttons {
+            display: flex;
+            gap: 12px;
+            flex-wrap: nowrap;
+        }
+        
+        /* 统一邮件按钮样式 */
+        .email-btn {
+            padding: 14px 20px;
+            border-radius: 8px;
+            font-size: 0.95rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-align: center;
+            min-width: 120px;
+            height: 50px;
+            box-sizing: border-box;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        /* 草稿按钮样式 */
+        .draft-button {
+            background-color: #f3f4f6;
+            color: #374151;
+            border: 1px solid #e5e7eb;
+            white-space: nowrap;
+        }
+        
+        .draft-button:hover {
+            background-color: #e5e7eb;
+            transform: translateY(-2px);
+        }
+        
+        .draft-button.draft-saved {
+            background-color: #ecfdf5;
+            color: #10b981;
+            border-color: #a7f3d0;
+        }
+        
+        .draft-box-button {
+            background-color: #f3f4f6;
+            color: #374151;
+            border: 1px solid #e5e7eb;
+            white-space: nowrap;
+        }
+        
+        .draft-box-button:hover {
+            background-color: #e5e7eb;
+            transform: translateY(-2px);
+        }
+        
+        .submit-button {
+            background-color: #3A7DFF; /* var(--primary-interaction-color) */
+            color: white;
+            border: none;
+            font-weight: 600;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+            position: relative;
+            overflow: hidden;
+            flex-grow: 1;  /* 让发送按钮占据更多空间 */
+            max-width: 200px; /* 限制最大宽度 */
+        }
+        
+        .submit-button:hover {
+            background-color: #2563EB; /* var(--primary-interaction-hover-color) */
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(58, 125, 255, 0.4);
+        }
+        
+        @media (max-width: 768px) {
+            .form-actions {
+                flex-direction: column;
+                align-items: stretch;
+                gap: 12px;
+            }
+            
+            .draft-buttons {
+                display: flex;
+                width: 100%;
+                justify-content: space-between;
+                gap: 10px;
+            }
+            
+            .draft-button, .draft-box-button {
+                flex: 1;
+                min-width: unset;
+                font-size: 0.9rem;
+                padding: 12px 6px;
+            }
+            
+            .submit-button {
+                width: 100%;
+                max-width: none;
+                padding: 12px 15px;
+            }
+            
+            .email-btn {
+                height: 46px;
+                font-size: 0.9rem;
+                min-width: unset;
+            }
+        }
+        
+        /* 模态框样式 */
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            z-index: 1000;
+            overflow: auto;
+        }
+        
+        .modal-content {
+            background-color: #ffffff;
+            margin: 10% auto;
+            padding: 0;
+            width: 80%;
+            max-width: 600px;
+            border-radius: 8px;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+            animation: modalFadeIn 0.3s;
+        }
+        
+        @keyframes modalFadeIn {
+            from {opacity: 0; transform: translateY(-20px);}
+            to {opacity: 1; transform: translateY(0);}
+        }
+        
+        .modal-header {
+            padding: 15px 20px;
+            border-bottom: 1px solid #e5e7eb;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .modal-header h3 {
+            margin: 0;
+            color: #111827;
+        }
+        
+        .close-modal {
+            font-size: 24px;
+            font-weight: bold;
+            color: #9ca3af;
+            cursor: pointer;
+        }
+        
+        .close-modal:hover {
+            color: #111827;
+        }
+        
+        .modal-body {
+            padding: 20px;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        
+        .modal-footer {
+            padding: 15px 20px;
+            border-top: 1px solid #e5e7eb;
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+        }
+        
+        .modal-footer button {
+            padding: 8px 16px;
+            border-radius: 6px;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .close-draft-modal {
+            background-color: #f3f4f6;
+            color: #374151;
+            border: 1px solid #e5e7eb;
+        }
+        
+        .close-draft-modal:hover {
+            background-color: #e5e7eb;
+        }
+        
+        .delete-all-drafts {
+            background-color: #fee2e2;
+            color: #b91c1c;
+            border: 1px solid #fecaca;
+        }
+        
+        .delete-all-drafts:hover {
+            background-color: #fecaca;
+        }
+        
+        /* 草稿列表样式 */
+        .drafts-list {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        
+        .draft-item {
+            border: 1px solid #e5e7eb;
+            border-radius: 6px;
+            padding: 15px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            position: relative;
+        }
+        
+        .draft-item:hover {
+            background-color: #f9fafb;
+            border-color: #d1d5db;
+        }
+        
+        .draft-item-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 10px;
+        }
+        
+        .draft-title {
+            font-weight: 600;
+            color: #111827;
+            font-size: 16px;
+            margin: 0;
+        }
+        
+        .draft-date {
+            color: #6b7280;
+            font-size: 12px;
+        }
+        
+        .draft-recipients {
+            font-size: 14px;
+            color: #4b5563;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            margin-bottom: 5px;
+        }
+        
+        .draft-content-preview {
+            font-size: 14px;
+            color: #6b7280;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            margin: 0;
+        }
+        
+        .draft-actions {
+            position: absolute;
+            top: 15px;
+            right: 15px;
+            display: flex;
+            gap: 8px;
+        }
+        
+        .draft-action-btn {
+            background: none;
+            border: none;
+            font-size: 16px;
+            color: #9ca3af;
+            cursor: pointer;
+            opacity: 0;
+            transition: opacity 0.2s;
+        }
+        
+        .draft-item:hover .draft-action-btn {
+            opacity: 1;
+        }
+        
+        .draft-delete-btn:hover {
+            color: #ef4444;
+        }
+        
+        .no-drafts {
+            text-align: center;
+            padding: 30px;
+            color: #6b7280;
+            font-size: 16px;
+        }
+        
+        @media (max-width: 768px) {
+            .form-container {
+                padding: 15px;
+                margin-top: 10px;
+            }
+            
+            .form-group label {
+                font-size: 14px;
+            }
+            
+            .editor-mode-switch {
+                flex-wrap: wrap;
+                justify-content: space-between;
+                padding: 8px;
+            }
+            
+            .editor-mode-hint {
+                width: 100%;
+                margin: 6px 0 0 0;
+                text-align: center;
+                padding: 0;
+                font-size: 12px;
+                color: #718096;
+            }
+            
+            .form-actions {
+                flex-direction: column;
+                align-items: stretch;
+                gap: 12px;
+            }
+            
+            .draft-buttons {
+                display: flex;
+                width: 100%;
+                justify-content: space-between;
+            }
+            
+            .draft-button, .draft-box-button {
+                flex: 1;
+                text-align: center;
+                font-size: 0.9rem;
+                padding: 12px 10px;
+            }
+            
+            .submit-button {
+                width: 100%;
+                max-width: none;
+                padding: 16px 20px;
+            }
+            
+            #recipients {
+                min-height: 80px;
+            }
+        }
+        
+        @media (max-width: 480px) {
+            .editor-container {
+                margin-bottom: 15px;
+            }
+            
+            .editor-mode-btn {
+                flex: 1;
+                text-align: center;
+                padding: 10px;
+                font-size: 14px;
+                margin: 0;
+                border-radius: 8px;
+                box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+            }
+            
+            .editor-mode-switch {
+                padding: 10px;
+                gap: 10px;
+            }
+            
+            .ql-toolbar {
+                flex-wrap: wrap;
+                justify-content: flex-start;
+            }
+            
+            .ql-formats {
+                margin-right: 5px !important;
+            }
+        }
+        
+        /* 额外的样式规则，确保按钮一致性 */
+        .form-actions .email-btn {
+            height: 50px;
+            min-width: 120px;
+            box-sizing: border-box;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .submit-button.email-btn {
+            font-weight: 600;
+        }
+        
+        @media (max-width: 768px) {
+            .form-actions .email-btn {
+                font-size: 0.9rem;
+                padding: 12px 10px;
+            }
+            
+            .draft-button.email-btn, 
+            .draft-box-button.email-btn {
+                flex: 1;
+                min-width: auto;
+            }
+            
+            .submit-button.email-btn {
+                width: 100%;
+                max-width: none;
+                padding: 14px 20px;
+            }
+        }
+        
+        /* 加载区域样式 */
+    </style>
+</head>
+<body style="height: 100%; overflow: auto;">
+    <!-- 发送邮件表单 -->
+    <div class="form-container">
+        <h2>发送邮件</h2>
+        
+        <!-- 服务错误信息 -->
+        <div id="serviceErrorContainer">
+            <h3>邮件服务不可用</h3>
+            <p>系统无法正常初始化邮件服务，请参考以下诊断信息：</p>
+            
+            <div id="diagnosticReportContainer">
+                <!-- 诊断信息将动态插入这里 -->
+            </div>
+            
+            <p>解决方法：</p>
+            <ol>
+                <li>刷新页面，重新加载应用</li>
+                <li>清除浏览器缓存后再试</li>
+                <li>检查网络连接是否正常</li>
+                <li>如果问题持续，请联系管理员</li>
+            </ol>
+            
+            <button id="retryServiceButton">重试连接</button>
+            <button id="showDetailsButton">显示详细信息</button>
+            
+            <pre id="serviceErrorDetails" style="display: none;">
+                <!-- 详细错误信息将动态插入这里 -->
+            </pre>
+        </div>
+        
+        <form id="emailForm">
+            <div class="form-group">
+                <label for="from">发件人名称（选填）</label>
+                <input type="text" id="from" placeholder="留空则使用"系统通知"作为发件人名称">
+                <small class="form-text">可自定义显示给收件人的发件人名称，邮箱地址将使用系统设置中的域名</small>
+            </div>
+            
+            <!-- 批量发送模式 - 现在是唯一的发送方式 -->
+            <div id="batchModeContainer" class="send-mode-container">
+                <div class="form-group">
+                    <label>收件人列表</label>
+                    <textarea id="recipientsInput" placeholder="支持多种分隔符: 逗号、分号、空格、换行等，自动去重"></textarea>
+                    <small class="form-text">可直接粘贴多种格式，如: user@example.com, 张三 <zhangsan@example.com>; user2@example.com</small>
+                </div>
+                <div class="form-group">
+                    <label for="batchSubject">主题</label>
+                    <input type="text" id="batchSubject" placeholder="邮件主题">
+                </div>
+            </div>
+            
+            <div class="form-group">
+                <label for="content">内容</label>
+                <div class="editor-container">
+                    <div class="editor-mode-switch">
+                        <button type="button" id="richEditorBtn" class="editor-mode-btn active">富文本编辑</button>
+                        <button type="button" id="htmlEditorBtn" class="editor-mode-btn">HTML源码</button>
+                        <small class="editor-mode-hint">使用HTML源码模式可编辑任意HTML内容</small>
+                    </div>
+                    <!-- 编辑器加载区域 -->
+                    <div id="editorLoading">
+                        <div class="spinner"></div>
+                        <div class="loading-text">正在加载编辑器...</div>
+                    </div>
+                    <div id="editorContainer" style="display: none;">
+                <div id="editor"></div>
+                <textarea id="htmlEditor" style="display: none; width: 100%; min-height: 300px; font-family: 'Courier New', monospace; padding: 16px; box-sizing: border-box; line-height: 1.5; font-size: 14px; color: #333; background-color: #f8fafb; border: none; border-top: 1px solid #e2e8f0; white-space: pre-wrap; tab-size: 2; -moz-tab-size: 2; resize: vertical; overflow-y: auto;"></textarea>
+            </div>
+            </div>
+            </div>
+            
+            <div class="form-actions">
+                <div class="draft-buttons">
+                    <button type="button" class="draft-button email-btn" id="saveDraftButton">保存草稿</button>
+                    <button type="button" class="draft-box-button email-btn" id="draftBoxButton">草稿箱</button>
+                </div>
+                <button type="button" class="submit-button email-btn" onclick="handleSendEmail()">发送</button>
+            </div>
+        </form>
+                </div>
+
+    <!-- 草稿管理模态框 -->
+    <div id="draftModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>草稿箱</h3>
+                <span class="close-modal">&times;</span>
+            </div>
+            <div class="modal-body">
+                <div id="draftsList" class="drafts-list">
+                    <!-- 草稿列表将动态添加 -->
+                    <div class="no-drafts">暂无保存的草稿</div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="delete-all-drafts">清空草稿箱</button>
+                <button type="button" class="close-draft-modal">关闭</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 直接引入富文本编辑器的JS (如果父页面未加载) -->
+    <script src="https://cdn.bootcdn.net/ajax/libs/quill/1.3.7/quill.min.js"></script>
+
+    <script>
+        // 全局变量来存储Quill实例
+        let quill;
+        let serviceStatus = {
+            available: false,
+            error: null,
+            diagnostics: {}
+        };
+        let recipientsList = []; // 用于存储批量发送的收件人列表
+        let originalRichTextContent = ''; // 存储切换到HTML模式前的富文本内容
+        
+        function parseRecipients(recipientsStr) {
+            console.log('执行parseRecipients函数, 输入:', typeof recipientsStr, `"${recipientsStr}"`);
+            const recipients = new Set(); // 使用Set自动处理重复邮件
+
+            if (typeof recipientsStr !== 'string' || recipientsStr.trim() === '') {
+                console.warn('parseRecipients: 输入不是有效字符串或为空');
+                const result = Array.from(recipients);
+                console.log('解析完成 (输入无效或为空), 共找到' + result.length + '个有效收件人:', result);
+                return result;
+            }
+
+            // 预处理输入字符串，替换多种分隔符为统一的逗号
+            let normalizedStr = recipientsStr
+                .replace(/[\n\t;]/g, ',') // 替换换行、制表符和分号为逗号
+                .replace(/\s+,/g, ',')    // 去除逗号前的空格
+                .replace(/,\s+/g, ',')    // 去除逗号后的空格
+                .replace(/,+/g, ',');     // 合并连续的逗号
+
+            // 1. 处理常见形式的邮箱地址，如 email@example.com
+            const simpleEmailRegex = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g;
+            const matches = normalizedStr.match(simpleEmailRegex);
+
+            if (matches) {
+                console.log('通过Regex初步匹配到的内容:', matches);
+                for (const match of matches) {
+                    const email = match.trim().toLowerCase();
+                    if (email.includes('@') && email.length >= 3) {
+                        recipients.add(email);
+                        console.log(`添加邮箱到Set: ${email}`);
+                    } else {
+                        console.warn(`丢弃一个无效的匹配: ${email}`);
+                    }
+                }
+            } else {
+                console.log('没有在输入字符串中匹配到任何邮件模式。');
+            }
+
+            // 2. 如果没有找到邮箱或找到的数量很少，尝试按逗号分隔再处理
+            if (recipients.size === 0 && normalizedStr.includes(',')) {
+                console.log('尝试按逗号分隔再次处理');
+                const parts = normalizedStr.split(',');
+                for (const part of parts) {
+                    const trimmed = part.trim();
+                    // 简单判断是否可能是邮箱
+                    if (trimmed.includes('@')) {
+                        // 再次匹配
+                        const match = trimmed.match(simpleEmailRegex);
+                        if (match && match.length > 0) {
+                            const email = match[0].toLowerCase();
+                            recipients.add(email);
+                            console.log(`通过分隔处理添加邮箱: ${email}`);
+                        }
+                    }
+                }
+            }
+
+            const result = Array.from(recipients);
+            console.log('解析完成, 共找到' + result.length + '个有效收件人:', result);
+            return result;
+        }
+        
+        // 处理发送邮件操作
+        async function handleSendEmail() {
+            console.log('开始处理发送邮件请求');
+            
+            try {
+                if (window.parent && window.parent.EmailService) {
+                    // 获取提交按钮并显示加载状态
+                    const submitButton = document.querySelector('.submit-button');
+                    const originalText = submitButton.textContent;
+                    submitButton.textContent = '发送中...';
+                    submitButton.disabled = true;
+                    
+                    try {
+                        // 获取表单数据
+                        const from = document.getElementById('from').value.trim();
+                        const subject = document.getElementById('batchSubject').value.trim();
+                        const recipients = document.getElementById('recipientsInput').value.trim();
+                        
+                        // 获取邮件内容 - 根据当前编辑模式
+                        let content = '';
+                        const htmlEditor = document.getElementById('htmlEditor');
+                        
+                        if (htmlEditor.style.display === 'none') {
+                            // 富文本模式 - 获取Quill编辑器内容
+                            content = window.quill.root.innerHTML;
+                        } else {
+                            // HTML源码模式 - 直接获取HTML
+                            content = htmlEditor.value;
+                        }
+                        
+                        // 表单验证
+                        if (!recipients) {
+                            throw new Error('请输入至少一个收件人');
+                        }
+                        
+                        if (!subject) {
+                            throw new Error('请输入邮件主题');
+                        }
+                        
+                        if (!content || content === '<p><br></p>') {
+                            throw new Error('请输入邮件内容');
+                        }
+                        
+                        // 解析收件人列表
+                        const recipientsList = window.parent.EmailService.parseRecipients(recipients);
+                        
+                        console.log(`已解析${recipientsList.length}个收件人`);
+                        
+                        if (recipientsList.length === 0) {
+                            throw new Error('未找到有效的收件人地址');
+                        }
+                        
+                        // 组装邮件数据
+                        const emailData = {
+                            from: from,
+                            to: recipientsList,
+                            subject: subject,
+                            html: content
+                        };
+                        
+                        // 使用智能发送方法 - 会自动选择单账号或多账号模式
+                        console.log('使用智能发送模式');
+                        const result = await window.parent.EmailService.smartSendEmail(emailData);
+                        console.log('邮件发送结果:', result);
+                        
+                        // 处理发送结果
+                        if (result.success) {
+                            // 发送成功
+                            const totalEmails = result.totalEmails || (result.ids?.length || recipientsList.length);
+                            const successMessage = `已成功发送${totalEmails}封邮件`;
+                            
+                            // 显示成功通知
+                            window.parent.showNotification ? 
+                                window.parent.showNotification(successMessage, 'success', 5000) : 
+                                alert(successMessage);
+                            
+                            // 清空表单（仅当用户选择清空时）
+                            if (confirm('邮件发送成功！是否清空表单以便发送新邮件？')) {
+                                // 清空所有输入
+                                document.getElementById('from').value = '';
+                                document.getElementById('batchSubject').value = '';
+                                document.getElementById('recipientsInput').value = '';
+                                
+                                // 清空编辑器内容
+                                if (htmlEditor.style.display === 'none') {
+                                    // 富文本模式
+                                    window.quill.root.innerHTML = '';
+                                } else {
+                                    // HTML源码模式 - 保留模板结构但清空内容区域
+                                    const currentTemplateId = document.getElementById('templateSelect').value;
+                                    if (currentTemplateId) {
+                                        window.templateManager.loadTemplate(currentTemplateId)
+                                            .then(templateHTML => {
+                                                htmlEditor.value = window.templateManager.formatHtml(templateHTML);
+                                            })
+                                            .catch(err => {
+                                                console.error('重新加载模板时出错:', err);
+                                                htmlEditor.value = '';
+                                            });
+                                    } else {
+                                        htmlEditor.value = '';
+                                    }
+                                }
+                            }
+                        } else {
+                            // 发送失败
+                            const errorType = 'error';
+                            const duration = 10000; // 显示10秒
+                            let errorMessage = result.error || '邮件发送失败，请稍后重试';
+                            
+                            // 添加更多错误详情
+                            if (result.errorDetails) {
+                                console.error('发送错误详情:', result.errorDetails);
+                            }
+                            
+                            // 检查是否是API密钥相关问题
+                            if (errorMessage.includes('API密钥') || errorMessage.includes('api key') || 
+                                errorMessage.includes('apiKey') || errorMessage.includes('未配置')) {
+                                
+                                errorMessage += '。请前往设置页面配置有效的Resend API密钥。';
+                                
+                                // 添加跳转设置页面的按钮
+                            const goToSettingsBtn = document.createElement('button');
+                                goToSettingsBtn.textContent = '前往设置';
+                            goToSettingsBtn.style.marginTop = '10px';
+                                goToSettingsBtn.style.marginLeft = '10px';
+                            goToSettingsBtn.style.padding = '5px 15px';
+                            goToSettingsBtn.style.backgroundColor = '#5850EC';
+                            goToSettingsBtn.style.color = 'white';
+                            goToSettingsBtn.style.border = 'none';
+                            goToSettingsBtn.style.borderRadius = '4px';
+                            goToSettingsBtn.style.cursor = 'pointer';
+                            
+                            goToSettingsBtn.addEventListener('click', function() {
+                                if (window.parent && typeof window.parent.navigateTo === 'function') {
+                                    window.parent.navigateTo('settings');
+                                }
+                            });
+                            
+                            const statusMessage = document.querySelector('.send-status-message');
+                            if (statusMessage) {
+                                statusMessage.appendChild(document.createElement('br'));
+                                statusMessage.appendChild(goToSettingsBtn);
+                            }
+                        }
+                        
+                        // 显示错误消息
+                        window.parent.showNotification ? 
+                            window.parent.showNotification(errorMessage, errorType, duration) : 
+                            alert(errorMessage);
+                        }
+                    } finally {
+                        // 恢复按钮状态
+                        submitButton.textContent = originalText;
+                        submitButton.disabled = false;
+                    }
+                } else {
+                    console.error('EmailService不可用:', window.parent, window.parent ? window.parent.EmailService : null);
+                    alert('邮件服务不可用，请刷新页面后重试');
+                }
+            } catch (error) {
+                console.error('处理表单提交时出错:', error);
+                window.parent.showNotification ? 
+                    window.parent.showNotification(`处理错误: ${error.message}`, 'error') : 
+                    alert(`发生错误: ${error.message}`);
+            }
+        }
+        
+        // 页面加载完成后的处理
+        window.onload = function() {
+            console.log('send.html页面加载完成');
+            
+            // 显示加载区域
+            document.getElementById('editorLoading').style.display = 'flex';
+            
+            // 检查Quill是否已可用，然后初始化编辑器
+            if (window.Quill) {
+                console.log('Quill编辑器已加载');
+                initEditor();
+                hideLoading();
+            } else {
+                console.error('Quill编辑器未加载，请检查CDN资源');
+                document.querySelector('#editorLoading .loading-text').textContent = '加载编辑器失败，请刷新页面重试...';
+            }
+            
+            // 初始化表单提交处理
+            initFormSubmit();
+            
+            // 通知父窗口页面已加载
+            if (window.parent && typeof window.parent.pageLoaded === 'function') {
+                console.log('通知父窗口页面已加载');
+                window.parent.pageLoaded('send');
+            } else {
+                console.warn('父窗口无法访问或没有pageLoaded函数');
+            }
+            
+            // 检查EmailService是否可用，添加重试机制
+            console.log('开始检查EmailService服务...');
+            checkEmailServiceWithRetry();
+            
+            // 初始化批量发送UI
+            initBatchSendUI();
+            
+            // 初始化草稿管理功能
+            DraftManager.init();
+            
+            // 手动添加提交按钮事件监听器，确保点击能够被捕获
+            const submitButton = document.querySelector('.submit-button');
+            if (submitButton) {
+                console.log('发现提交按钮，添加点击事件监听器');
+                submitButton.onclick = function(e) {
+                    console.log('提交按钮被点击 (通过onclick)');
+                };
+            } else {
+                console.error('未找到提交按钮元素!');
+            }
+        };
+        
+        // 检查EmailService是否可用，带重试机制
+        function checkEmailServiceWithRetry(retryCount = 0, maxRetries = 5) {
+            console.log(`检查EmailService可用性 (尝试 ${retryCount + 1}/${maxRetries + 1})`);
+            
+            if (window.parent && window.parent.EmailService) {
+                console.log('EmailService对象可用');
+                document.getElementById('serviceErrorContainer').style.display = 'none';
+                return true;
+            } else {
+                console.warn(`EmailService对象不可用 (尝试 ${retryCount + 1}/${maxRetries + 1})`);
+                
+                // 如果还有重试次数，延迟后再次检查
+                if (retryCount < maxRetries) {
+                    // 使用递增延迟，从500ms开始，最多等待3秒
+                    const delay = Math.min(500 * (retryCount + 1), 3000);
+                    console.log(`${delay}ms后重试...`);
+                    
+                    setTimeout(() => {
+                        checkEmailServiceWithRetry(retryCount + 1, maxRetries);
+                    }, delay);
+                    
+                    // 如果是第一次检查，不要立即显示错误
+                    if (retryCount === 0) {
+                        return false;
+                    }
+                }
+                
+                // 达到最大重试次数后显示错误信息
+                if (retryCount >= maxRetries) {
+                    console.error('EmailService对象在多次尝试后仍不可用');
+                    document.getElementById('serviceErrorContainer').style.display = 'block';
+                    
+                    // 添加重试按钮事件
+                    document.getElementById('retryServiceButton').addEventListener('click', function() {
+                        location.reload();
+                    });
+                    
+                    // 添加显示详细信息按钮事件
+                    document.getElementById('showDetailsButton').addEventListener('click', function() {
+                        const details = document.getElementById('serviceErrorDetails');
+                        if (details.style.display === 'none') {
+                            details.style.display = 'block';
+                            this.textContent = '隐藏详细信息';
+                            
+                            // 生成详细的调试信息
+                            details.textContent = 
+                                `父窗口可访问: ${window.parent ? '是' : '否'}\n` +
+                                `EmailService存在: ${window.parent && window.parent.EmailService ? '是' : '否'}\n` +
+                                `Quill编辑器可用: ${window.Quill ? '是' : '否'}\n` +
+                                `浏览器: ${navigator.userAgent}\n` +
+                                `时间: ${new Date().toISOString()}\n`;
+                        } else {
+                            details.style.display = 'none';
+                            this.textContent = '显示详细信息';
+                        }
+                    });
+                }
+                
+                return false;
+            }
+        }
+        
+        // 隐藏加载界面
+        function hideLoading() {
+            document.getElementById('editorLoading').style.display = 'none';
+            document.getElementById('editorContainer').style.display = 'block';
+        }
+        
+        // 初始化富文本编辑器
+        function initEditor() {
+            // 创建Quill编辑器实例
+            window.quill = new Quill('#editor', {
+                theme: 'snow',
+                modules: {
+                    toolbar: [
+                        [{ 'header': [1, 2, 3, 4, 5, 6, false] }],
+                        ['bold', 'italic', 'underline', 'strike'],
+                        [{ 'color': [] }, { 'background': [] }],
+                        [{ 'list': 'ordered'}, { 'list': 'bullet' }],
+                        [{ 'indent': '-1'}, { 'indent': '+1' }],
+                        [{ 'align': [] }],
+                        ['link', 'image'],
+                        ['clean']
+                    ]
+                },
+                placeholder: '请输入邮件内容...'
+            });
+            
+            // 将Quill实例存储到全局变量中
+            quill = window.quill;
+            
+            // 初始化HTML源码与富文本编辑器切换
+            const richEditorBtn = document.getElementById('richEditorBtn');
+            const htmlEditorBtn = document.getElementById('htmlEditorBtn');
+            const htmlEditor = document.getElementById('htmlEditor');
+            
+            // 设置HTML编辑器的样式，使其更易于编辑HTML代码
+            htmlEditor.style.fontFamily = 'Consolas, monospace';
+            htmlEditor.style.lineHeight = '1.5';
+            htmlEditor.style.fontSize = '14px'; 
+            htmlEditor.style.tabSize = '2';
+            htmlEditor.style.whiteSpace = 'pre';
+            htmlEditor.style.overflowY = 'auto';
+            htmlEditor.style.padding = '16px';
+            htmlEditor.style.color = '#333';
+            htmlEditor.style.backgroundColor = '#f8fafb';
+            htmlEditor.style.border = 'none';
+            
+            // 添加切换动画效果
+            const editorContainer = document.getElementById('editorContainer');
+            if (editorContainer) {
+                editorContainer.style.transition = 'opacity 0.3s ease';
+            }
+            
+            // 模板内容已移至/templates文件夹，不再需要内嵌定义
+            // 移除旧的模板定义代码
+            
+            // 初始化模板选择器和相关功能
+            initTemplateSelector();
+            
+            // 设置模板管理器初始化后的回调函数
+            window.templateManager.onTemplatesLoaded(async templates => {
+                if (templates && templates.length > 0) {
+                    // 载入默认模板
+                    const defaultTemplateId = window.templateManager.defaultTemplateId;
+                    try {
+                        const templateHTML = await window.templateManager.loadTemplate(defaultTemplateId);
+                        htmlEditor.value = window.templateManager.formatHtml(templateHTML);
+                        
+                        // 设置Quill编辑器内容为模板的内容区域部分
+                        const contentSelector = window.templateManager.getContentSelector(defaultTemplateId);
+                        if (contentSelector) {
+                            const userContent = window.templateManager.extractContent(templateHTML, contentSelector);
+                            if (!userContent) {
+                                quill.root.innerHTML = '<p>在此处输入您的邮件内容...</p>';
+                            }
+                        }
+                    } catch (error) {
+                        console.error('加载默认模板失败:', error);
+                        // 使用备用方案：空内容
+                        quill.root.innerHTML = '<p>在此处输入您的邮件内容...</p>';
+                    }
+                }
+            });
+        }
+        
+        // 初始化批量发送UI
+        function initBatchSendUI() {
+            console.log('初始化批量发送UI - 使用文本框模式');
+        }
+        
+        // 收集批量发送数据
+        function collectBatchEmailData() {
+            // 获取默认主题
+            const defaultSubject = document.getElementById('batchSubject').value;
+            
+            // 获取发件人
+            const from = document.getElementById('from').value;
+            
+            // 获取收件人文本并解析
+            const recipientsStr = document.getElementById('recipientsInput').value;
+            const recipients = parseRecipients(recipientsStr);
+            
+            // 如果没有收件人，返回空数组
+            if (!recipients || recipients.length === 0) {
+                return [];
+            }
+            
+            // 准备HTML内容 - 确保应用模板
+            const htmlContent = prepareEmailHtml();
+            
+            // 为每个收件人创建邮件数据
+            const emailsData = recipients.map(email => ({
+                from,
+                to: email,
+                subject: defaultSubject,
+                html: htmlContent
+            }));
+            
+            return emailsData;
+        }
+        
+        /**
+         * 准备用于发送的HTML内容
+         * 确保内容是完整的HTML文档，应用正确的模板
+         * @returns {string} 完整的HTML邮件内容
+         */
+        function prepareEmailHtml() {
+            // 获取当前编辑模式下的内容
+            let userContent;
+            let isCompleteHtml = false;
+            
+            if (document.getElementById('htmlEditor').style.display === 'none') {
+                // 富文本模式 - 获取编辑器内容
+                userContent = quill.root.innerHTML;
+            } else {
+                // HTML模式 - 获取HTML编辑器内容
+                const htmlEditorContent = document.getElementById('htmlEditor').value;
+                
+                // 检查是否是完整HTML
+                if (isCompleteHtmlDocument(htmlEditorContent)) {
+                    // 如果是完整HTML，仍然检查并清理可能的重复内容
+                    try {
+                        if (window.templateManager && typeof window.templateManager.cleanDuplicateContent === 'function') {
+                            return window.templateManager.cleanDuplicateContent(htmlEditorContent);
+                        } else {
+                            return htmlEditorContent; // 无法清理时返回原始内容
+                        }
+                    } catch (error) {
+                        console.warn('清理HTML内容失败，使用原始内容:', error);
+                        return htmlEditorContent;
+                    }
+                }
+                
+                // 不是完整HTML，可能是已经从模板中提取的内容
+                // 尝试获取当前内容区域
+                userContent = htmlEditorContent;
+            }
+            
+            // 清理用户内容中可能的重复模板片段
+            try {
+                if (window.templateManager && typeof window.templateManager.cleanDuplicateContent === 'function') {
+                    userContent = window.templateManager.cleanDuplicateContent(userContent);
+                }
+            } catch (error) {
+                console.warn('清理用户内容失败:', error);
+            }
+            
+            // 获取当前选中的模板ID
+            let currentTemplateId = window.templateManager.defaultTemplateId;
+            const templateSelect = document.getElementById('templateSelect');
+            if (templateSelect) {
+                currentTemplateId = templateSelect.value;
+            }
+            
+            try {
+                // 从缓存中获取模板HTML
+                let templateHTML = window.templateManager.templateCache.get(currentTemplateId);
+                
+                // 如果缓存中没有，尝试重新加载
+                if (!templateHTML) {
+                    console.log('模板缓存未命中，异步加载模板:', currentTemplateId);
+                    // 立即同步加载模板（注意：通常应异步加载，但这里需要同步结果）
+                    const templateInfo = window.templateManager.templates.find(t => t.id === currentTemplateId);
+                    if (templateInfo) {
+                        const templateUrl = `/templates/${templateInfo.file}`;
+                        const xhr = new XMLHttpRequest();
+                        xhr.open('GET', templateUrl, false); // 同步请求
+                        xhr.send();
+                        if (xhr.status === 200) {
+                            templateHTML = xhr.responseText;
+                            // 更新缓存
+                            window.templateManager.templateCache.set(currentTemplateId, templateHTML);
+                        }
+                    }
+                }
+                
+                if (!templateHTML) {
+                    console.error('无法加载邮件模板，使用简单包装');
+                    // 使用简单HTML包装
+                    return `<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>邮件通知</title>
+</head>
+<body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
+    <div style="padding: 20px 0;">
+        ${userContent}
+            </div>
+    <div style="margin-top: 30px; padding-top: 15px; border-top: 1px solid #eee; font-size: 12px; color: #777; text-align: center;">
+        <p>此邮件由ResendMail邮件系统发送</p>
+                </div>
+</body>
+</html>`;
+                }
+                
+                // 获取内容选择器
+                const contentSelector = window.templateManager.getContentSelector(currentTemplateId);
+                if (!contentSelector) {
+                    console.warn('模板缺少内容选择器，使用默认处理');
+                    return templateHTML.replace('<div class="content">在此处显示您的邮件内容...</div>', 
+                                               `<div class="content">${userContent}</div>`);
+                }
+                
+                // 使用模板管理器注入内容
+                let finalHtml = window.templateManager.injectContent(
+                    templateHTML, 
+                    userContent, 
+                    contentSelector
+                );
+                
+                // 尝试内联CSS样式，提高邮件客户端兼容性
+                try {
+                    if (window.templateManager && typeof window.templateManager.inlineStyles === 'function') {
+                        finalHtml = window.templateManager.inlineStyles(finalHtml);
+                    }
+                } catch (error) {
+                    console.warn('内联CSS样式失败，使用原始HTML:', error);
+                }
+                
+                return finalHtml;
+            } catch (error) {
+                console.error('准备邮件HTML时出错:', error);
+                // 发生错误时的降级处理
+                return `<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>邮件通知</title>
+</head>
+<body style="font-family: Arial, sans-serif; margin: 0; padding: 20px;">
+    ${userContent}
+</body>
+</html>`;
+            }
+        }
+        
+        /**
+         * 检查HTML是否为完整的HTML文档
+         * @param {string} html HTML内容
+         * @returns {boolean} 是否为完整的HTML文档
+         */
+        function isCompleteHtmlDocument(html) {
+            // 检查是否包含DOCTYPE和基本HTML结构
+            const containsDoctype = html.trim().toLowerCase().startsWith('<!doctype');
+            const containsHtmlTag = /<html[^>]*>/i.test(html);
+            const containsHeadTag = /<head[^>]*>/i.test(html);
+            const containsBodyTag = /<body[^>]*>/i.test(html);
+            
+            return containsDoctype && containsHtmlTag && 
+                   containsHeadTag && containsBodyTag;
+        }
+        
+        // 初始化表单提交处理
+        function initFormSubmit() {
+            // 获取表单和提交按钮
+            const emailForm = document.getElementById('emailForm');
+            const submitButton = document.querySelector('.submit-button');
+            
+            // 直接监听提交按钮的点击事件，避免表单提交事件可能被阻止
+            submitButton.addEventListener('click', async function(e) {
+                // 阻止默认行为和表单提交
+                e.preventDefault();
+                console.log('提交按钮被点击');
+                
+                try {
+                    // 根据当前模式收集数据
+                    let emailData;
+                    
+                    // 批量发送模式
+                    emailData = collectBatchEmailData();
+                    
+                    // 验证是否有有效数据
+                    if (!emailData || emailData.length === 0) {
+                        window.parent.showNotification ? 
+                            window.parent.showNotification('请至少添加一个有效的收件人', 'error') : 
+                            alert('请至少添加一个有效的收件人');
+                        return;
+                    }
+                    
+                    // 验证是否超过批量发送限制
+                    if (emailData.length > 100) {
+                        const warningMessage = `收件人数量(${emailData.length})超过批量发送上限(100)，将自动截取前100个收件人`;
+                        window.parent.showNotification ? 
+                            window.parent.showNotification(warningMessage, 'warning', 5000) : 
+                            alert(warningMessage);
+                        
+                        // 截取前100个
+                        emailData = emailData.slice(0, 100);
+                    }
+                    
+                    // 检查邮件内容大小
+                    if (emailData.length > 0) {
+                        const firstEmail = emailData[0];
+                        const htmlSize = new Blob([firstEmail.html]).size;
+                        const maxSize = 100 * 1024; // 100KB
+                        if (htmlSize > maxSize) {
+                            const warningMessage = `邮件内容较大(${Math.round(htmlSize/1024)}KB)，可能会影响发送速度`;
+                            window.parent.showNotification ? 
+                                window.parent.showNotification(warningMessage, 'warning', 5000) : 
+                                alert(warningMessage);
+                        }
+                    }
+                    
+                    // 调用父窗口的邮件服务发送邮件
+                    if (window.parent && window.parent.EmailService) {
+                        // 显示发送中状态
+                        const submitButton = document.querySelector('.submit-button');
+                        const originalText = submitButton.textContent;
+                        submitButton.textContent = '发送中...';
+                        submitButton.disabled = true;
+                        
+                        try {
+                            // 添加状态提示
+                            const statusMessage = document.createElement('div');
+                            statusMessage.className = 'send-status-message';
+                            statusMessage.textContent = '正在处理邮件内容...';
+                            submitButton.parentNode.appendChild(statusMessage);
+                            
+                            // 等待一会以显示处理状态
+                            await new Promise(resolve => setTimeout(resolve, 100));
+                            
+                            // 更新状态
+                            statusMessage.textContent = '正在发送邮件...';
+                            
+                            // 先检查API设置是否完整
+                            const apiSettings = window.parent.EmailService.getApiSettings();
+                            if (!apiSettings) {
+                                throw new Error('未配置API密钥，请先在设置页面添加Resend账号');
+                            }
+                            
+                            if (!apiSettings.apiKey) {
+                                throw new Error('API密钥为空，请在设置页面完善账号信息');
+                            }
+                            
+                            if (!apiSettings.domain) {
+                                throw new Error('发送域名未设置，请在设置页面完善账号信息');
+                            }
+                            
+                            // 使用智能发送方法，会自动选择单独发送或批量发送
+                            const result = await window.parent.EmailService.sendMail(emailData);
+                            
+                            // 检查结果
+                            if (result && result.success) {
+                                console.log('邮件发送成功:', result);
+                                
+                                // 更新状态
+                                statusMessage.textContent = '邮件发送成功!';
+                                statusMessage.className = 'send-status-message success';
+                                
+                                // 记录成功信息
+                                console.log('邮件发送成功', result);
+                                
+                                // 清空表单
+                                document.getElementById('batchSubject').value = '';
+                                document.getElementById('recipientsInput').value = '';
+                                
+                                // 清空编辑器内容
+                                quill.root.innerHTML = '';
+                                document.getElementById('htmlEditor').value = '';
+                                
+                                // 短暂延迟后移除状态消息
+                                setTimeout(() => {
+                                    statusMessage.remove();
+                                }, 3000);
+                                
+                                // 显示成功通知
+                                const messageContent = `成功发送了 ${result.ids ? result.ids.length : emailData.length} 封邮件`;
+                                
+                                window.parent.showNotification ? 
+                                    window.parent.showNotification(messageContent, 'success', 3000) : 
+                                    alert(messageContent);
+                                } else {
+                                // 发送失败
+                                let displayedErrorMessage = '邮件发送失败，请稍后重试或联系技术支持。'; // 更通用的默认消息
+
+                                if (result && result.error) {
+                                    if (typeof result.error === 'object' && result.error !== null) {
+                                        // 如果 result.error 是一个对象 (可能来自 Worker 或 Resend API 的直接响应)
+                                        displayedErrorMessage = result.error.message || (result.error.details || '未知错误详情');
+
+                                        // 保留特定错误代码的处理逻辑，但确保 result.error 是对象
+                                        if (result.error.code) { // 只有当 code 存在时才检查
+                                            if (result.error.code === 'rate_limit_exceeded') {
+                                                displayedErrorMessage = '发送速率超限，请稍后再试';
+                                            } else if (result.error.code === 'quota_exceeded') {
+                                                displayedErrorMessage = '账户配额已用完，请检查账户余额';
+                                            } else if (result.error.code === 'invalid_domain') {
+                                                displayedErrorMessage = '无效的发送域名，请检查域名配置';
+                                            } else if (result.error.code === 'MISSING_API_KEY' || (result.error.message && result.error.message.includes('Invalid API key'))) {
+                                                displayedErrorMessage = 'API密钥无效或缺失，请检查配置';
+                                            }
+                                        }
+                                        // 可以根据 Worker 返回的 error_code 添加更多特定处理
+                                        else if (result.error.error_code === 'UPSTREAM_ERROR' && result.error.details && typeof result.error.details === 'string' && result.error.details.toLowerCase().includes('invalid `to` field')) {
+                                            displayedErrorMessage = '收件人地址格式无效。请使用 email@example.com 或 "名字 <email@example.com>" 的格式。';
+                                        }
+                                        // 如果 result.error 对象中没有 .message 但有 .error 字符串 (例如 Worker 的 errorResponse)
+                                        else if (result.error.error && typeof result.error.error === 'string'){
+                                            displayedErrorMessage = result.error.error;
+                                        }
+
+                                    } else if (typeof result.error === 'string') {
+                                        // 如果 result.error 只是一个字符串 (来自 EmailService 的 catch)
+                                        displayedErrorMessage = result.error;
+                                    }
+                                }
+
+                                statusMessage.textContent = displayedErrorMessage;
+                                statusMessage.className = 'send-status-message error';
+                                
+                                console.error('邮件发送失败', result && result.error ? result.error : '未知错误');
+                                
+                                // 显示错误通知
+                                window.parent.showNotification ? 
+                                    window.parent.showNotification(displayedErrorMessage, 'error', 5000) : 
+                                    alert(displayedErrorMessage);
+                    }
+                } catch (error) {
+                            console.error('邮件发送失败:', error);
+                            
+                            // 更新状态消息
+                            const statusMessage = document.querySelector('.send-status-message');
+                            if (statusMessage) {
+                                statusMessage.textContent = `发送失败: ${error.message}`;
+                                statusMessage.style.color = '#EF4444';
+                                
+                                // 短暂延迟后移除状态消息
+                                setTimeout(() => {
+                                    statusMessage.remove();
+                                }, 5000);
+                            }
+                            
+                            // 根据错误类型提供不同的提示
+                            let errorType = 'error';
+                            let duration = 5000;
+                            let errorMessage = `邮件发送失败: ${error.message}`;
+                            
+                            // 根据错误类型优化提示信息
+                            if (error.message.includes('速率限制')) {
+                                errorMessage = '发送频率过快，请稍后再试。系统已自动尝试切换发送账号。';
+                                errorType = 'warning';
+                            } else if (error.message.includes('配额超限')) {
+                                errorMessage = '当前账号发送配额已用尽，请稍后再试或添加新的API密钥。';
+                                errorType = 'warning';
+                            } else if (error.message.includes('无效域名') || error.message.includes('域名验证')) {
+                                errorMessage = '发件人域名无效或未验证，请在设置中配置正确的验证域名。';
+                            } else if (error.message.includes('超时')) {
+                                errorMessage = '请求超时，请检查网络连接后重试。';
+                            } else if (error.message.includes('404') || error.message.includes('Not Found')) {
+                                errorMessage = 'API服务器响应404错误，请检查：\n1. API密钥是否正确\n2. 访问地址是否有效\n3. 设置中的账号信息是否完整';
+                                errorType = 'error';
+                                duration = 8000;
+                            } else if (error.message.includes('API密钥') || error.message.includes('未配置')) {
+                                errorMessage = '请先在"设置"页面配置Resend API密钥和发送域名，然后再尝试发送邮件。';
+                                errorType = 'error';
+                                duration = 8000;
+                                
+                                // 添加一个转到设置页面的按钮
+                                const goToSettingsBtn = document.createElement('button');
+                                goToSettingsBtn.textContent = '前往设置页面';
+                                goToSettingsBtn.style.marginTop = '10px';
+                                goToSettingsBtn.style.padding = '5px 15px';
+                                goToSettingsBtn.style.backgroundColor = '#5850EC';
+                                goToSettingsBtn.style.color = 'white';
+                                goToSettingsBtn.style.border = 'none';
+                                goToSettingsBtn.style.borderRadius = '4px';
+                                goToSettingsBtn.style.cursor = 'pointer';
+                                
+                                goToSettingsBtn.addEventListener('click', function() {
+                                    if (window.parent && typeof window.parent.navigateTo === 'function') {
+                                        window.parent.navigateTo('settings');
+                                    }
+                                });
+                                
+                                const statusMessage = document.querySelector('.send-status-message');
+                                if (statusMessage) {
+                                    statusMessage.appendChild(document.createElement('br'));
+                                    statusMessage.appendChild(goToSettingsBtn);
+                                }
+                            }
+                            
+                            // 显示错误消息
+                            window.parent.showNotification ? 
+                                window.parent.showNotification(errorMessage, errorType, duration) : 
+                                alert(errorMessage);
+                        } finally {
+                            // 恢复按钮状态
+                            submitButton.textContent = originalText;
+                            submitButton.disabled = false;
+                        }
+                    } else {
+                        alert('邮件服务不可用，请刷新页面后重试');
+                    }
+                } catch (error) {
+                    console.error('处理表单提交时出错:', error);
+                    window.parent.showNotification ? 
+                        window.parent.showNotification(`处理错误: ${error.message}`, 'error') : 
+                        alert(`发生错误: ${error.message}`);
+                }
+            });
+            
+            // 初始化多账号设置面板
+            initMultiAccountPanel();
+        }
+        
+        // 初始化多账号设置面板
+        function initMultiAccountPanel() {
+            // 高级设置已移至设置页面，此函数现在不执行任何操作
+            console.log('高级设置已移至设置页面');
+        }
+        
+        // 监听窗口大小变化，调整编辑器高度
+        window.addEventListener('resize', function() {
+            const editor = document.getElementById('editor');
+            const htmlEditor = document.getElementById('htmlEditor');
+            
+            // 编辑器高度响应式调整
+            if (window.innerWidth <= 480) {
+                editor.style.height = '200px';
+                htmlEditor.style.minHeight = '200px';
+            } else if (window.innerWidth <= 768) {
+                editor.style.height = '250px';
+                htmlEditor.style.minHeight = '250px';
+            } else {
+                editor.style.height = '300px';
+                htmlEditor.style.minHeight = '300px';
+            }
+        });
+        
+        // 创建模板选择区域DOM结构 - 移动到全局作用域
+        function createTemplateSelectorUI(templates) {
+            // 已有选择器则返回
+            if (document.getElementById('templateSelector')) {
+                return document.getElementById('templateSelector');
+            }
+            
+            // 创建选择器容器
+            const selectorDiv = document.createElement('div');
+            selectorDiv.id = 'templateSelector';
+            selectorDiv.style.padding = '10px';
+            selectorDiv.style.backgroundColor = '#f8f9fa';
+            selectorDiv.style.borderBottom = '1px solid #e5e7eb';
+            selectorDiv.style.marginBottom = '10px';
+            
+            // 添加标题
+            const titleSpan = document.createElement('span');
+            titleSpan.textContent = '选择模板：';
+            titleSpan.style.marginRight = '10px';
+            titleSpan.style.fontSize = '14px';
+            titleSpan.style.color = '#4b5563';
+            selectorDiv.appendChild(titleSpan);
+            
+            // 如果没有可用模板，显示提示
+            if (!templates || templates.length === 0) {
+                const noTemplatesMsg = document.createElement('span');
+                noTemplatesMsg.textContent = '未找到模板';
+                noTemplatesMsg.style.color = '#EF4444';
+                noTemplatesMsg.style.fontSize = '13px';
+                selectorDiv.appendChild(noTemplatesMsg);
+                return selectorDiv;
+            }
+            
+            // 创建模板选择下拉菜单
+            const selectElem = document.createElement('select');
+            selectElem.id = 'templateSelect';
+            selectElem.style.padding = '5px 10px';
+            selectElem.style.borderRadius = '4px';
+            selectElem.style.border = '1px solid #e5e7eb';
+            selectElem.style.fontSize = '13px';
+            selectElem.style.backgroundColor = '#ffffff';
+            selectElem.style.marginRight = '10px';
+            
+            // 添加模板选项
+            templates.forEach(template => {
+                const option = document.createElement('option');
+                option.value = template.id;
+                option.textContent = template.name;
+                option.title = template.description || '';
+                
+                if (template.id === window.templateManager.defaultTemplateId) {
+                    option.selected = true;
+                }
+                
+                selectElem.appendChild(option);
+            });
+            
+            // 添加下拉菜单事件监听
+            selectElem.addEventListener('change', async function() {
+                const selectedTemplateId = this.value;
+                await changeTemplate(selectedTemplateId);
+            });
+            
+            selectorDiv.appendChild(selectElem);
+            
+            // 添加提示信息
+            const tipElem = document.createElement('small');
+            tipElem.textContent = '提示: 切换模板将保留您的内容';
+            tipElem.style.color = '#6B7280';
+            tipElem.style.fontSize = '12px';
+            tipElem.style.marginLeft = '5px';
+            selectorDiv.appendChild(tipElem);
+            
+            return selectorDiv;
+        }
+        
+        // 初始化模板选择器和相关功能
+        function initTemplateSelector() {
+            // 初始化模板管理器
+            window.templateManager.initialize().then(success => {
+                if (!success) {
+                    console.error('模板管理器初始化失败');
+                    return;
+                }
+                
+                // 注册模板加载完成的回调
+                window.templateManager.onTemplatesLoaded(templates => {
+                    console.log('模板加载完成:', templates);
+                    
+                    // 创建模板选择器UI
+                    const selectorDiv = createTemplateSelectorUI(templates);
+                    
+                    // 仅在HTML编辑器模式下添加模板选择器
+                    if (htmlEditor.style.display === 'block') {
+                        if (!document.getElementById('templateSelector')) {
+                            htmlEditor.parentNode.insertBefore(selectorDiv, htmlEditor);
+                        }
+                    }
+                });
+            }).catch(error => {
+                console.error('模板管理器初始化出错:', error);
+            });
+        }
+        
+        // 切换模板函数
+        async function changeTemplate(templateId) {
+            try {
+                // 获取当前编辑的内容，不管是在富文本模式还是HTML模式
+                let userContent = '';
+                
+                if (htmlEditor.style.display === 'none') {
+                    // 富文本模式，直接获取内容
+                    userContent = quill.root.innerHTML;
+                } else {
+                    // HTML模式，尝试从当前HTML中提取内容区域
+                    const currentHTML = htmlEditor.value;
+                    let contentSelector = null;
+                    
+                    // 获取当前选中的模板ID
+                    const currentTemplateId = document.getElementById('templateSelect').value;
+                    if (currentTemplateId) {
+                        // 根据当前模板ID获取内容选择器
+                        contentSelector = window.templateManager.getContentSelector(currentTemplateId);
+                    }
+                    
+                    if (contentSelector) {
+                        // 尝试提取内容
+                        userContent = window.templateManager.extractContent(currentHTML, contentSelector);
+                    } else {
+                        // 降级处理：尝试查找常见的内容标识
+                        try {
+                            const parser = new DOMParser();
+                            const doc = parser.parseFromString(currentHTML, 'text/html');
+                            
+                            // 按优先级查找内容区域
+                            const contentElement = 
+                                doc.getElementById('user-content') || 
+                                doc.querySelector('.content') || 
+                                doc.querySelector('.user-content-area');
+                            
+                            if (contentElement) {
+                                userContent = contentElement.innerHTML;
+                }
+            } catch (e) {
+                            console.error('提取内容时出错:', e);
+                        }
+                    }
+                }
+                
+                // 加载新模板
+                const templateHTML = await window.templateManager.loadTemplate(templateId);
+                const contentSelector = window.templateManager.getContentSelector(templateId);
+                
+                // 将用户内容注入新模板
+                if (userContent && contentSelector) {
+                    const updatedTemplateHTML = window.templateManager.injectContent(
+                        templateHTML, 
+                        userContent, 
+                        contentSelector
+                    );
+                    
+                    // 更新HTML编辑器
+                    htmlEditor.value = window.templateManager.formatHtml(updatedTemplateHTML);
+                    
+                    // 如果在富文本模式，需要更新quill编辑器
+                    if (htmlEditor.style.display === 'none') {
+                        // 提取新模板中的内容区域
+                        const extractedContent = window.templateManager.extractContent(
+                            updatedTemplateHTML, 
+                            contentSelector
+                        );
+                        
+                        // 更新富文本编辑器
+                        quill.root.innerHTML = extractedContent || userContent;
+                        
+                        // 修复：在内容更新后重置Quill的滚动状态，修复潜在的滚动事件错误
+                        setTimeout(() => {
+                            try {
+                                // 通知Quill编辑器内容已更改，让它刷新滚动状态
+                                quill.update();
+                                // 如果Quill有scroll模块，尝试重新初始化它
+                                if (quill.scroll) {
+                                    quill.scroll.optimize();
+                                }
+            } catch (error) {
+                                console.warn('Quill滚动模块优化失败，忽略此错误:', error);
+                            }
+                        }, 50);
+                    }
+                } else {
+                    // 如果没有用户内容或找不到内容选择器，直接设置模板
+                    htmlEditor.value = window.templateManager.formatHtml(templateHTML);
+                }
+                
+                // 更新UI状态 - 确保下拉选择器的值与当前模板一致
+                const templateSelect = document.getElementById('templateSelect');
+                if (templateSelect) {
+                    templateSelect.value = templateId;
+                }
+                
+                console.log(`模板已切换到: ${templateId}`);
+            } catch (error) {
+                console.error('切换模板失败:', error);
+                window.parent.showNotification ? 
+                    window.parent.showNotification(`切换模板失败: ${error.message}`, 'error') : 
+                    alert(`切换模板失败: ${error.message}`);
+            }
+        }
+        
+        // HTML源码编辑器按钮点击事件
+        htmlEditorBtn.addEventListener('click', function() {
+            // 如果当前不是HTML模式，则将富文本内容转换为HTML
+            if (htmlEditor.style.display === 'none') {
+                // 添加过渡动画
+                if (editorContainer) {
+                    editorContainer.style.opacity = '0.5';
+                }
+                
+                // 保存当前富文本内容
+                originalRichTextContent = quill.root.innerHTML;
+                
+                try {
+                    // 获取当前选中的模板ID
+                let currentTemplateId = window.templateManager.defaultTemplateId;
+                const templateSelect = document.getElementById('templateSelect');
+                if (templateSelect) {
+                    currentTemplateId = templateSelect.value;
+                }
+                
+                    // 获取模板HTML
+                    let templateHTML = window.templateManager.templateCache.get(currentTemplateId);
+                    
+                    // 如果缓存中没有，使用默认模板
+                    if (!templateHTML) {
+                        console.warn('模板缓存未命中，使用默认HTML包装');
+                        templateHTML = `<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>邮件通知</title>
+</head>
+<body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
+    <div style="padding: 20px 0;" id="user-content">
+        在此处输入您的邮件内容...
+            </div>
+    <div style="margin-top: 30px; padding-top: 15px; border-top: 1px solid #eee; font-size: 12px; color: #777; text-align: center;">
+        <p>此邮件由ResendMail邮件系统发送</p>
+            </div>
+</body>
+</html>`;
+                    }
+                    
+                    // 获取内容选择器
+                        const contentSelector = window.templateManager.getContentSelector(currentTemplateId);
+                    
+                    // 将Quill内容注入到模板中
+                        if (contentSelector) {
+                        const htmlContent = window.templateManager.injectContent(
+                                templateHTML, 
+                            quill.root.innerHTML,
+                                contentSelector
+                            );
+                        htmlEditor.value = window.templateManager.formatHtml(htmlContent);
+                        } else {
+                        // 如果没有内容选择器，使用默认标记
+                        htmlEditor.value = templateHTML.replace('<div id="user-content">在此处输入您的邮件内容...</div>', 
+                                       `<div id="user-content">${quill.root.innerHTML}</div>`);
+                    }
+                    
+                    // 显示模板选择区域
+                    const templateSelector = document.getElementById('templateSelector');
+                    if (templateSelector) {
+                        templateSelector.style.display = 'block';
+                    }
+                } catch (error) {
+                    console.error('转换为HTML时出错:', error);
+                    // 降级处理 - 只使用Quill内容
+                    htmlEditor.value = `<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>邮件内容</title>
+</head>
+<body>
+${quill.root.innerHTML}
+</body>
+</html>`;
+                }
+                
+                // 延迟切换显示，使动画平滑
+                setTimeout(() => {
+                        // 切换显示状态
+                        htmlEditor.style.display = 'block';
+                        document.querySelector('.ql-container').style.display = 'none';
+                        
+                        // 更新按钮状态
+                        richEditorBtn.classList.remove('active');
+                        htmlEditorBtn.classList.add('active');
+                    
+                    // 恢复透明度
+                    if (editorContainer) {
+                        editorContainer.style.opacity = '1';
+                    }
+                }, 200);
+            }
+        });
+        
+        // 富文本编辑器按钮点击事件
+        richEditorBtn.addEventListener('click', function() {
+            // 如果当前在HTML模式，则将HTML内容转换为富文本
+            if (htmlEditor.style.display !== 'none') {
+                // 添加过渡动画
+                if (editorContainer) {
+                    editorContainer.style.opacity = '0.5';
+                }
+                
+                try {
+                    // 优先使用保存的原始富文本内容
+                    if (originalRichTextContent) {
+                        console.log('恢复保存的富文本内容');
+                        quill.root.innerHTML = originalRichTextContent;
+                        
+                        // 修复：在内容更新后重置Quill的滚动状态，修复潜在的滚动事件错误
+                        setTimeout(() => {
+                            try {
+                                // 通知Quill编辑器内容已更改，让它刷新滚动状态
+                                quill.update();
+                                // 如果Quill有scroll模块，尝试重新初始化它
+                                if (quill.scroll) {
+                                    quill.scroll.optimize();
+                                }
+                            } catch (error) {
+                                console.warn('Quill滚动模块优化失败，忽略此错误:', error);
+                            }
+                        }, 50);
+                    } else {
+                        // 降级处理：如果没有保存的内容，则从HTML提取
+                        console.log('未找到保存的富文本内容，尝试从HTML提取');
+                        
+                        // 获取当前选中的模板ID
+                        let currentTemplateId = window.templateManager.defaultTemplateId;
+                        const templateSelect = document.getElementById('templateSelect');
+                        if (templateSelect) {
+                            currentTemplateId = templateSelect.value;
+                        }
+                        
+                        // 获取内容选择器
+                        const contentSelector = window.templateManager.getContentSelector(currentTemplateId);
+                        
+                        // 提取内容
+                        let contentToSet = '';
+                        if (contentSelector) {
+                            contentToSet = window.templateManager.extractContent(htmlEditor.value, contentSelector);
+                        }
+                        
+                        // 如果无法提取内容，尝试降级处理
+                        if (!contentToSet) {
+                            // 尝试从HTML源码中提取内容区域
+                            const parser = new DOMParser();
+                            const templateDoc = parser.parseFromString(htmlEditor.value, 'text/html');
+                            
+                            // 按优先级查找内容区域
+                            const userContentElement = templateDoc.getElementById('user-content');
+                            if (userContentElement) {
+                                contentToSet = userContentElement.innerHTML;
+                                console.log('从user-content区域提取内容到富文本编辑器');
+                            } else {
+                                // 如果找不到，尝试找简易模板的content区域
+                                const contentDiv = templateDoc.querySelector('.content');
+                                if (contentDiv) {
+                                    contentToSet = contentDiv.innerHTML;
+                                    console.log('从content区域提取内容到富文本编辑器');
+                                } else {
+                                    // 如果都找不到，使用完整HTML
+                                    contentToSet = htmlEditor.value;
+                                    console.log('未找到内容区域，使用完整HTML');
+                                }
+                            }
+                        }
+                        
+                        // 设置到Quill编辑器
+                        quill.root.innerHTML = contentToSet;
+                        
+                        // 修复：在内容更新后重置Quill的滚动状态，修复潜在的滚动事件错误
+                        setTimeout(() => {
+                            try {
+                                // 通知Quill编辑器内容已更改，让它刷新滚动状态
+                                quill.update();
+                                // 如果Quill有scroll模块，尝试重新初始化它
+                                if (quill.scroll) {
+                                    quill.scroll.optimize();
+                                }
+                            } catch (error) {
+                                console.warn('Quill滚动模块优化失败，忽略此错误:', error);
+                            }
+                        }, 50);
+                    }
+                } catch (error) {
+                    console.error('从HTML解析内容时出错:', error);
+                    // 出错时输出更详细的错误信息
+                    console.error('错误详情:', error.message);
+                    console.error('HTML内容:', htmlEditor.value.substring(0, 200) + '...');
+                    
+                    // 尝试使用保存的富文本内容作为恢复选项
+                    if (originalRichTextContent) {
+                        console.log('解析失败，使用保存的富文本内容');
+                        quill.root.innerHTML = originalRichTextContent;
+                    } else {
+                        // 使用安全的方式处理错误，防止UI中断
+                        try {
+                            quill.root.innerHTML = '<p>无法解析HTML内容，请检查源码格式。</p>';
+                        } catch (fallbackError) {
+                            console.error('设置富文本编辑器错误提示失败:', fallbackError);
+                        }
+                    }
+                }
+                
+                // 延迟切换显示，使动画平滑
+                setTimeout(() => {
+                // 切换显示状态
+                htmlEditor.style.display = 'none';
+                document.querySelector('.ql-container').style.display = 'block';
+                
+                // 隐藏模板选择区
+                const templateSelector = document.getElementById('templateSelector');
+                if (templateSelector) {
+                    templateSelector.style.display = 'none';
+                }
+                
+                // 更新按钮状态
+                richEditorBtn.classList.add('active');
+                htmlEditorBtn.classList.remove('active');
+                    
+                    // 恢复透明度
+                    if (editorContainer) {
+                        editorContainer.style.opacity = '1';
+                    }
+                }, 200);
+            }
+        });
+
+        // 初始化模板选择器
+        initTemplateSelector();
+
+        // 修改HTML界面，添加预览按钮
+        document.addEventListener('DOMContentLoaded', function() {
+            // 添加预览按钮
+            const actionContainer = document.querySelector('.action-buttons');
+            if (actionContainer) {
+                const previewButton = document.createElement('button');
+                previewButton.type = 'button';
+                previewButton.className = 'preview-button';
+                previewButton.innerHTML = '<i class="fas fa-eye"></i> 预览邮件';
+                previewButton.style.marginRight = '10px';
+                previewButton.style.backgroundColor = '#3182ce';
+                previewButton.style.color = 'white';
+                previewButton.style.border = 'none';
+                previewButton.style.borderRadius = '4px';
+                previewButton.style.padding = '8px 16px';
+                previewButton.style.cursor = 'pointer';
+                
+                // 在提交按钮之前插入预览按钮
+                const submitButton = document.querySelector('.submit-button');
+                if (submitButton) {
+                    actionContainer.insertBefore(previewButton, submitButton);
+                } else {
+                    actionContainer.appendChild(previewButton);
+                }
+                
+                // 添加预览按钮点击事件
+                previewButton.addEventListener('click', function() {
+                    showEmailPreview();
+                });
+            }
+            
+            // 创建预览弹窗容器
+            const previewContainer = document.createElement('div');
+            previewContainer.id = 'emailPreviewContainer';
+            previewContainer.style.display = 'none';
+            previewContainer.style.position = 'fixed';
+            previewContainer.style.zIndex = '1000';
+            previewContainer.style.left = '0';
+            previewContainer.style.top = '0';
+            previewContainer.style.width = '100%';
+            previewContainer.style.height = '100%';
+            previewContainer.style.backgroundColor = 'rgba(0,0,0,0.7)';
+            previewContainer.style.overflowY = 'auto';
+            
+            // 创建预览内容
+            previewContainer.innerHTML = `
+                <div style="position: relative; width: 80%; max-width: 900px; margin: 30px auto; background: white; border-radius: 8px; padding: 20px; box-shadow: 0 4px 12px rgba(0,0,0,0.15);">
+                    <button id="closePreview" style="position: absolute; right: 15px; top: 15px; background: none; border: none; font-size: 20px; cursor: pointer;">×</button>
+                    <h2 style="margin-top: 0; color: #3182ce;">邮件预览</h2>
+                    <div class="preview-info" style="margin-bottom: 15px; padding: 10px; background: #f8f9fa; border-radius: 4px;">
+                        <p style="margin: 5px 0;"><strong>发件人:</strong> <span id="previewFrom"></span></p>
+                        <p style="margin: 5px 0;"><strong>收件人:</strong> <span id="previewTo"></span></p>
+                        <p style="margin: 5px 0;"><strong>主题:</strong> <span id="previewSubject"></span></p>
+        </div>
+                    <div class="preview-tabs" style="border-bottom: 1px solid #dee2e6; margin-bottom: 15px;">
+                        <button id="tabRendered" class="preview-tab active" style="background: none; border: none; padding: 8px 15px; cursor: pointer; font-weight: bold; color: #3182ce; border-bottom: 2px solid #3182ce;">渲染视图</button>
+                        <button id="tabHtml" class="preview-tab" style="background: none; border: none; padding: 8px 15px; cursor: pointer;">HTML源码</button>
+    </div>
+                    <div id="previewRenderedContent" style="height: 500px; overflow: auto; border: 1px solid #dee2e6; padding: 15px; border-radius: 4px;"></div>
+                    <div id="previewHtmlContent" style="display: none; height: 500px; overflow: auto; border: 1px solid #dee2e6; padding: 15px; border-radius: 4px; white-space: pre-wrap; font-family: monospace; font-size: 12px;"></div>
+                    <div style="margin-top: 20px; color: #666; font-size: 12px;">
+                        <p><strong>注意:</strong> 此预览显示的是邮件原始外观，实际收到的邮件可能会因邮件客户端不同而有所差异。</p>
+                        <p>ResendMail 智能群发邮件系统会对邮件内容进行安全处理以提高送达率，这可能会导致某些样式变化。</p>
+    </div>
+                </div>
+            `;
+            
+            document.body.appendChild(previewContainer);
+            
+            // 关闭预览按钮事件
+            document.getElementById('closePreview').addEventListener('click', function() {
+                document.getElementById('emailPreviewContainer').style.display = 'none';
+            });
+            
+            // 预览标签切换事件
+            document.getElementById('tabRendered').addEventListener('click', function() {
+                this.classList.add('active');
+                this.style.color = '#3182ce';
+                this.style.borderBottom = '2px solid #3182ce';
+                document.getElementById('tabHtml').classList.remove('active');
+                document.getElementById('tabHtml').style.color = '#666';
+                document.getElementById('tabHtml').style.borderBottom = 'none';
+                document.getElementById('previewRenderedContent').style.display = 'block';
+                document.getElementById('previewHtmlContent').style.display = 'none';
+            });
+            
+            document.getElementById('tabHtml').addEventListener('click', function() {
+                this.classList.add('active');
+                this.style.color = '#3182ce';
+                this.style.borderBottom = '2px solid #3182ce';
+                document.getElementById('tabRendered').classList.remove('active');
+                document.getElementById('tabRendered').style.color = '#666';
+                document.getElementById('tabRendered').style.borderBottom = 'none';
+                document.getElementById('previewRenderedContent').style.display = 'none';
+                document.getElementById('previewHtmlContent').style.display = 'block';
+            });
+        });
+
+        /**
+         * 显示邮件预览
+         */
+        function showEmailPreview() {
+            try {
+                // 获取预览所需信息
+                const from = document.getElementById('from').value;
+                const recipientsStr = document.getElementById('recipientsInput').value;
+                const recipients = parseRecipients(recipientsStr);
+                const subject = document.getElementById('batchSubject').value;
+                
+                if (!recipients || recipients.length === 0) {
+                    alert('请至少添加一个有效的收件人');
+                    return;
+                }
+                
+                // 准备HTML内容
+                const htmlContent = prepareEmailHtml();
+                
+                // 显示预览信息
+                document.getElementById('previewFrom').textContent = from;
+                document.getElementById('previewTo').textContent = recipients.join(', ');
+                document.getElementById('previewSubject').textContent = subject;
+                
+                // 显示HTML内容
+                document.getElementById('previewRenderedContent').innerHTML = htmlContent;
+                
+                // 显示HTML源码
+                const htmlSource = document.getElementById('previewHtmlContent');
+                htmlSource.textContent = htmlContent;
+                
+                // 显示预览容器
+                document.getElementById('emailPreviewContainer').style.display = 'block';
+            } catch (error) {
+                console.error('显示邮件预览时出错:', error);
+                alert('预览邮件时出错，请查看控制台获取详细信息');
+            }
+        }
+
+        // 草稿功能相关代码 
+        const DraftManager = {
+            draftStorageKey: 'resendmail_drafts',
+            autoSaveTimerId: null,
+            lastSaveTime: 0,
+            
+            // 初始化草稿管理器
+            init: function() {
+                console.log('初始化草稿管理器');
+                
+                // 添加保存草稿按钮事件
+                const saveDraftBtn = document.getElementById('saveDraftButton');
+                if (saveDraftBtn) {
+                    saveDraftBtn.addEventListener('click', () => {
+                        this.saveDraft();
+                    });
+                }
+                
+                // 添加草稿箱按钮事件
+                const draftBoxBtn = document.getElementById('draftBoxButton');
+                if (draftBoxBtn) {
+                    draftBoxBtn.addEventListener('click', () => {
+                        this.openDraftBox();
+                    });
+                }
+                
+                // 添加关闭模态框事件
+                const closeModalBtns = document.querySelectorAll('.close-modal, .close-draft-modal');
+                closeModalBtns.forEach(btn => {
+                    btn.addEventListener('click', () => {
+                        document.getElementById('draftModal').style.display = 'none';
+                    });
+                });
+                
+                // 添加清空草稿箱按钮事件
+                const deleteAllBtn = document.querySelector('.delete-all-drafts');
+                if (deleteAllBtn) {
+                    deleteAllBtn.addEventListener('click', () => {
+                        if (confirm('确定要删除所有草稿吗？此操作不可恢复。')) {
+                            this.deleteAllDrafts();
+                        }
+                    });
+                }
+                
+                // 点击模态框外部关闭
+                window.addEventListener('click', (event) => {
+                    const modal = document.getElementById('draftModal');
+                    if (event.target === modal) {
+                        modal.style.display = 'none';
+                    }
+                });
+                
+                // 设置自动保存
+                this.setupAutoSave();
+                
+                // 尝试自动加载最新的草稿
+                this.tryAutoLoadLatestDraft();
+            },
+            
+            // 尝试自动加载最新的草稿
+            tryAutoLoadLatestDraft: function() {
+                try {
+                    // 获取所有草稿
+                    const drafts = this.getDrafts();
+                    
+                    // 如果没有草稿，直接返回
+                    if (drafts.length === 0) return;
+                    
+                    // 检查用户是否主动保存过草稿的标志
+                    const hasUserSavedDraft = localStorage.getItem('user_has_saved_draft') === 'true';
+                    
+                    // 如果用户从未主动保存过草稿，则不自动弹出恢复提示
+                    // 仅当用户至少手动保存过一次草稿时，才考虑加载自动保存的草稿
+                    if (!hasUserSavedDraft) {
+                        console.log('用户从未主动保存过草稿，跳过自动加载提示');
+                        return;
+                    }
+                    
+                    // 优先找自动保存的草稿
+                    let latestDraft = drafts.find(draft => draft.autoSaved);
+                    
+                    // 如果没有自动保存的草稿，使用最新的手动保存的草稿
+                    if (!latestDraft) {
+                        // 按创建时间排序，取最新的
+                        drafts.sort((a, b) => {
+                            const dateA = new Date(a.updatedAt || a.createdAt);
+                            const dateB = new Date(b.updatedAt || b.createdAt);
+                            return dateB - dateA;
+                        });
+                        
+                        latestDraft = drafts[0];
+                    }
+                    
+                    // 检查草稿是否在当天创建
+                    const now = new Date();
+                    const draftDate = new Date(latestDraft.createdAt);
+                    const isToday = draftDate.getDate() === now.getDate() && 
+                                   draftDate.getMonth() === now.getMonth() && 
+                                   draftDate.getFullYear() === now.getFullYear();
+                    
+                    // 只有是当天的草稿才提示自动加载
+                    if (isToday) {
+                        // 如果有查询参数标记是否自动加载
+                        const urlParams = new URLSearchParams(window.location.search);
+                        const autoLoad = urlParams.get('autoLoad');
+                        
+                        if (autoLoad === 'true') {
+                            // 直接加载草稿
+                            this.loadDraft(latestDraft.id);
+                        } else {
+                            // 显示询问是否加载草稿的通知
+                            const loadDraftMessage = `发现${latestDraft.autoSaved ? '自动保存' : '保存'}的草稿，是否加载？`;
+                            
+                            if (confirm(loadDraftMessage)) {
+                                this.loadDraft(latestDraft.id);
+                            }
+                        }
+                    }
+                } catch (error) {
+                    console.error('自动加载草稿失败:', error);
+                }
+            },
+            
+            // 获取当前邮件内容
+            getCurrentEmailData: function() {
+                // 获取表单数据
+                const from = document.getElementById('from').value.trim();
+                const subject = document.getElementById('batchSubject').value.trim();
+                const recipients = document.getElementById('recipientsInput').value.trim();
+                
+                // 获取邮件内容 - 根据当前编辑模式
+                let content = '';
+                const htmlEditor = document.getElementById('htmlEditor');
+                
+                if (htmlEditor.style.display === 'none') {
+                    // 富文本模式 - 获取Quill编辑器内容
+                    content = window.quill.root.innerHTML;
+                } else {
+                    // HTML源码模式 - 直接获取HTML
+                    content = htmlEditor.value;
+                }
+                
+                // 当前使用的模板
+                let templateId = '';
+                const templateSelect = document.getElementById('templateSelect');
+                if (templateSelect) {
+                    templateId = templateSelect.value;
+                }
+                
+                return {
+                    from,
+                    subject,
+                    recipients,
+                    content,
+                    templateId,
+                    editMode: htmlEditor.style.display === 'none' ? 'rich' : 'html',
+                    createdAt: new Date().toISOString(),
+                    updatedAt: new Date().toISOString()
+                };
+            },
+            
+            // 保存草稿
+            saveDraft: function() {
+                try {
+                    // 获取保存按钮并更新状态
+                    const saveDraftBtn = document.getElementById('saveDraftButton');
+                    if (saveDraftBtn) {
+                        const originalText = saveDraftBtn.textContent;
+                        saveDraftBtn.textContent = '保存中...';
+                        saveDraftBtn.disabled = true;
+                    }
+                    
+                    // 获取当前邮件内容
+                    const emailData = this.getCurrentEmailData();
+                    
+                    // 检查是否有内容可保存
+                    if (!emailData.subject && !emailData.recipients && (!emailData.content || emailData.content === '<p><br></p>')) {
+                        window.parent.showNotification ? 
+                            window.parent.showNotification('邮件内容为空，无需保存草稿', 'warning') : 
+                            alert('邮件内容为空，无需保存草稿');
+                            
+                        // 恢复按钮状态
+                        if (saveDraftBtn) {
+                            saveDraftBtn.textContent = '保存草稿';
+                            saveDraftBtn.disabled = false;
+                        }
+                        
+                        return false;
+                    }
+                    
+                    // 生成唯一ID
+                    emailData.id = 'draft_' + Date.now();
+                    
+                    // 获取现有草稿
+                    let drafts = this.getDrafts();
+                    
+                    // 添加新草稿
+                    drafts.unshift(emailData);
+                    
+                    // 如果草稿数量过多，删除最旧的
+                    const maxDrafts = 20; // 最多保存20份草稿
+                    if (drafts.length > maxDrafts) {
+                        drafts = drafts.slice(0, maxDrafts);
+                    }
+                    
+                    // 保存草稿
+                    localStorage.setItem(this.draftStorageKey, JSON.stringify(drafts));
+                    
+                    // 设置用户主动保存草稿的标记
+                    localStorage.setItem('user_has_saved_draft', 'true');
+                    
+                    // 更新最后保存时间
+                    this.lastSaveTime = Date.now();
+                    
+                    // 显示成功消息
+                    window.parent.showNotification ? 
+                        window.parent.showNotification('草稿已保存', 'success') : 
+                        alert('草稿已保存');
+                        
+                    console.log('草稿已保存', emailData);
+                    
+                    // 更新按钮状态，显示保存成功
+                    if (saveDraftBtn) {
+                        saveDraftBtn.textContent = '已保存 ✓';
+                        saveDraftBtn.classList.add('draft-saved');
+                        
+                        // 2秒后恢复按钮状态
+                        setTimeout(() => {
+                            saveDraftBtn.textContent = '保存草稿';
+                            saveDraftBtn.classList.remove('draft-saved');
+                            saveDraftBtn.disabled = false;
+                        }, 2000);
+                    }
+                    
+                    return true;
+                } catch (error) {
+                    console.error('保存草稿失败:', error);
+                    
+                    window.parent.showNotification ? 
+                        window.parent.showNotification('保存草稿失败: ' + error.message, 'error') : 
+                        alert('保存草稿失败: ' + error.message);
+                        
+                    // 恢复按钮状态
+                    const saveDraftBtn = document.getElementById('saveDraftButton');
+                    if (saveDraftBtn) {
+                        saveDraftBtn.textContent = '保存草稿';
+                        saveDraftBtn.disabled = false;
+                    }
+                    
+                    return false;
+                }
+            },
+            
+            // 自动保存草稿
+            autoSaveDraft: function() {
+                // 如果距离上次保存时间超过5分钟，且表单有内容，则自动保存
+                const now = Date.now();
+                if (now - this.lastSaveTime > 5 * 60 * 1000) {
+                    // 获取当前邮件内容
+                    const emailData = this.getCurrentEmailData();
+                    
+                    // 检查是否有内容需要保存
+                    if (emailData.subject || emailData.recipients || (emailData.content && emailData.content !== '<p><br></p>')) {
+                        // 设置草稿类型为自动保存
+                        emailData.autoSaved = true;
+                        
+                        // 生成唯一ID
+                        emailData.id = 'auto_' + Date.now();
+                        
+                        // 获取现有草稿
+                        let drafts = this.getDrafts();
+                        
+                        // 查找是否已有自动保存的草稿
+                        const autoSaveIndex = drafts.findIndex(draft => draft.autoSaved);
+                        
+                        // 如果已有自动保存的草稿，更新它
+                        if (autoSaveIndex !== -1) {
+                            drafts[autoSaveIndex] = emailData;
+                        } else {
+                            // 添加新草稿
+                            drafts.unshift(emailData);
+                            
+                            // 如果草稿数量过多，删除最旧的
+                            const maxDrafts = 20; // 最多保存20份草稿
+                            if (drafts.length > maxDrafts) {
+                                drafts = drafts.slice(0, maxDrafts);
+                            }
+                        }
+                        
+                        // 保存草稿
+                        localStorage.setItem(this.draftStorageKey, JSON.stringify(drafts));
+                        
+                        // 更新最后保存时间
+                        this.lastSaveTime = now;
+                        
+                        console.log('草稿已自动保存', emailData);
+                    }
+                }
+            },
+            
+            // 设置自动保存
+            setupAutoSave: function() {
+                // 每分钟检查一次是否需要自动保存
+                this.autoSaveTimerId = setInterval(() => {
+                    this.autoSaveDraft();
+                }, 60 * 1000);
+                
+                // 监听页面关闭事件，尝试自动保存
+                window.addEventListener('beforeunload', () => {
+                    this.autoSaveDraft();
+                });
+            },
+            
+            // 获取所有草稿
+            getDrafts: function() {
+                try {
+                    const draftsJson = localStorage.getItem(this.draftStorageKey);
+                    return draftsJson ? JSON.parse(draftsJson) : [];
+                } catch (error) {
+                    console.error('获取草稿失败:', error);
+                    return [];
+                }
+            },
+            
+            // 删除草稿
+            deleteDraft: function(draftId) {
+                try {
+                    // 获取现有草稿
+                    let drafts = this.getDrafts();
+                    
+                    // 过滤掉要删除的草稿
+                    drafts = drafts.filter(draft => draft.id !== draftId);
+                    
+                    // 保存更新后的草稿
+                    localStorage.setItem(this.draftStorageKey, JSON.stringify(drafts));
+                    
+                    // 更新草稿箱界面
+                    this.renderDraftsList();
+                    
+                    console.log('草稿已删除', draftId);
+                    
+                    return true;
+                } catch (error) {
+                    console.error('删除草稿失败:', error);
+                    return false;
+                }
+            },
+            
+            // 删除所有草稿
+            deleteAllDrafts: function() {
+                try {
+                    // 清空草稿
+                    localStorage.removeItem(this.draftStorageKey);
+                    
+                    // 更新草稿箱界面
+                    this.renderDraftsList();
+                    
+                    console.log('所有草稿已删除');
+                    
+                    window.parent.showNotification ? 
+                        window.parent.showNotification('所有草稿已删除', 'success') : 
+                        alert('所有草稿已删除');
+                        
+                    return true;
+                } catch (error) {
+                    console.error('删除所有草稿失败:', error);
+                    return false;
+                }
+            },
+            
+            // 打开草稿箱
+            openDraftBox: function() {
+                // 渲染草稿列表
+                this.renderDraftsList();
+                
+                // 显示草稿箱模态框
+                document.getElementById('draftModal').style.display = 'block';
+            },
+            
+            // 渲染草稿列表
+            renderDraftsList: function() {
+                // 获取草稿列表容器
+                const draftsListContainer = document.getElementById('draftsList');
+                if (!draftsListContainer) return;
+                
+                // 获取所有草稿
+                const drafts = this.getDrafts();
+                
+                // 清空容器
+                draftsListContainer.innerHTML = '';
+                
+                // 如果没有草稿，显示提示
+                if (drafts.length === 0) {
+                    draftsListContainer.innerHTML = '<div class="no-drafts">暂无保存的草稿</div>';
+                    return;
+                }
+                
+                // 生成草稿列表HTML
+                drafts.forEach(draft => {
+                    const draftItem = document.createElement('div');
+                    draftItem.className = 'draft-item';
+                    draftItem.dataset.id = draft.id;
+                    
+                    // 格式化日期
+                    const date = new Date(draft.updatedAt || draft.createdAt);
+                    const formattedDate = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')} ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+                    
+                    // 生成收件人预览文本
+                    let recipientsPreview = '';
+                    if (draft.recipients) {
+                        const recipientsList = draft.recipients.split(/[,;\s]+/).filter(Boolean);
+                        recipientsPreview = recipientsList.length > 3 
+                            ? `${recipientsList.slice(0, 3).join(', ')} 等 ${recipientsList.length} 人`
+                            : recipientsList.join(', ');
+                    }
+                    
+                    // 生成内容预览文本
+                    let contentPreview = '';
+                    if (draft.content) {
+                        // 创建临时元素来解析HTML
+                        const tempDiv = document.createElement('div');
+                        tempDiv.innerHTML = draft.content;
+                        contentPreview = tempDiv.textContent.trim().substring(0, 100) + (tempDiv.textContent.length > 100 ? '...' : '');
+                    }
+                    
+                    // 设置草稿项内容
+                    draftItem.innerHTML = `
+                        <div class="draft-item-header">
+                            <p class="draft-title">${draft.subject || '(无主题)'}</p>
+                            <span class="draft-date">${formattedDate}</span>
+                        </div>
+                        <p class="draft-recipients">${recipientsPreview || '(无收件人)'}</p>
+                        <p class="draft-content-preview">${contentPreview || '(无内容)'}</p>
+                        <div class="draft-actions">
+                            <button class="draft-action-btn draft-delete-btn" title="删除草稿">
+                                <span>×</span>
+                            </button>
+                        </div>
+                    `;
+                    
+                    // 添加点击草稿项事件
+                    draftItem.addEventListener('click', (event) => {
+                        if (!event.target.closest('.draft-action-btn')) {
+                            this.loadDraft(draft.id);
+                        }
+                    });
+                    
+                    // 添加删除按钮事件
+                    const deleteBtn = draftItem.querySelector('.draft-delete-btn');
+                    if (deleteBtn) {
+                        deleteBtn.addEventListener('click', (event) => {
+                            event.stopPropagation();
+                            if (confirm('确定要删除这份草稿吗？')) {
+                                this.deleteDraft(draft.id);
+                            }
+                        });
+                    }
+                    
+                    draftsListContainer.appendChild(draftItem);
+                });
+            },
+            
+            // 加载草稿
+            loadDraft: function(draftId) {
+                try {
+                    // 获取所有草稿
+                    const drafts = this.getDrafts();
+                    
+                    // 查找要加载的草稿
+                    const draft = drafts.find(d => d.id === draftId);
+                    if (!draft) {
+                        throw new Error('未找到草稿');
+                    }
+                    
+                    // 确认是否加载草稿
+                    if (!confirm('确定要加载此草稿吗？当前未保存的内容将被替换。')) {
+                        return;
+                    }
+                    
+                    // 加载草稿内容到表单
+                    document.getElementById('from').value = draft.from || '';
+                    document.getElementById('batchSubject').value = draft.subject || '';
+                    document.getElementById('recipientsInput').value = draft.recipients || '';
+                    
+                    // 加载内容到编辑器
+                    const htmlEditor = document.getElementById('htmlEditor');
+                    const richEditorBtn = document.getElementById('richEditorBtn');
+                    const htmlEditorBtn = document.getElementById('htmlEditorBtn');
+                    
+                    // 根据草稿的编辑模式切换编辑器
+                    if (draft.editMode === 'rich') {
+                        // 切换到富文本模式
+                        htmlEditor.style.display = 'none';
+                        document.querySelector('.ql-container').style.display = 'block';
+                        
+                        // 更新按钮状态
+                        richEditorBtn.classList.add('active');
+                        htmlEditorBtn.classList.remove('active');
+                        
+                        // 加载内容到Quill编辑器
+                        quill.root.innerHTML = draft.content || '';
+                    } else {
+                        // 切换到HTML模式
+                        htmlEditor.style.display = 'block';
+                        document.querySelector('.ql-container').style.display = 'none';
+                        
+                        // 更新按钮状态
+                        richEditorBtn.classList.remove('active');
+                        htmlEditorBtn.classList.add('active');
+                        
+                        // 加载内容到HTML编辑器
+                        htmlEditor.value = draft.content || '';
+                    }
+                    
+                    // 加载模板（如果有）
+                    if (draft.templateId) {
+                        const templateSelect = document.getElementById('templateSelect');
+                        if (templateSelect) {
+                            templateSelect.value = draft.templateId;
+                        }
+                    }
+                    
+                    // 设置用户主动保存草稿的标记，确保此次会话的自动保存可用
+                    localStorage.setItem('user_has_saved_draft', 'true');
+                    
+                    // 关闭草稿箱模态框
+                    document.getElementById('draftModal').style.display = 'none';
+                    
+                    // 显示成功消息
+                    window.parent.showNotification ? 
+                        window.parent.showNotification('草稿已加载', 'success') : 
+                        alert('草稿已加载');
+                        
+                    console.log('草稿已加载', draft);
+                    
+                    return true;
+                } catch (error) {
+                    console.error('加载草稿失败:', error);
+                    
+                    window.parent.showNotification ? 
+                        window.parent.showNotification('加载草稿失败: ' + error.message, 'error') : 
+                        alert('加载草稿失败: ' + error.message);
+                        
+                    return false;
+                }
+            }
+        };
+    </script>
+</body>
+</html> 

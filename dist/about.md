@@ -1,4 +1,4 @@
-# ResendMail 智能群发邮件系统 - 重构版
+# 关于 ResendMail 智能群发邮件系统
 
 > 智能邮件营销，重塑触达新境界
 
@@ -258,6 +258,9 @@ function addCorsHeaders(response, request) {
 ### GitHub仓库
 本项目已在GitHub开源：[https://github.com/HiSixcc/ResendMail](https://github.com/HiSixcc/ResendMail)
 
+当前状态：**5** Stars, **1** Fork
+
+开源许可：MIT License
 
 ## 免责声明
 
@@ -275,7 +278,7 @@ function addCorsHeaders(response, request) {
 
 ### 系统对部署环境有什么要求？
 - **前端**：任何静态托管平台均可
-- **后端**：必须是Cloudflare Workers
+- **后端**：*必须*是Cloudflare Workers
 - 需要有效的Resend API Key
 
 ### 系统支持查看历史记录吗？
@@ -306,11 +309,7 @@ function addCorsHeaders(response, request) {
 ## 技术支持
 
 ### 邮件支持
-系统使用或部署遇到问题？请通过邮件联系我们，1-2个工作日内回复。该邮箱同时提供深度定制服务咨询。
-
 [admin@ntun.cn](mailto:admin@ntun.cn)
 
 ### 问题反馈
-发现Bug或有功能建议，请通过GitHub Issues提交，我们将及时跟进处理。
-
 [GitHub Issues](https://github.com/HiSixcc/ResendMail/issues) 

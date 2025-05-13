@@ -1,0 +1,830 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ResendMail 智能群发邮件系统</title>
+    <style>
+        /* Global Resets and Base Styles */
+        :root {
+            /* 导入全局变量 */
+            --primary-color: #3A7DFF;
+            --primary-hover-color: #2563EB;
+            --primary-text-color: #1A202C;
+            --secondary-text-color: #4A5568;
+            --page-background-color: #FFFFFF;
+            --light-background-color: #F7FAFC;
+            --border-color: #E2E8F0;
+        }
+        
+        *,
+        *::before,
+        *::after {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        html {
+            font-size: 16px;
+            scroll-behavior: smooth;
+            height: 100%;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
+            line-height: 1.6;
+            color: var(--primary-text-color);
+            background-color: var(--page-background-color);
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        .page-wrapper {
+            flex-grow: 1;
+            width: 100%;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 1140px;
+            margin-left: auto;
+            margin-right: auto;
+            padding-left: 20px;
+            padding-right: 20px;
+        }
+
+        /* Headings */
+        h1, h2, h3, h4 {
+            font-weight: 700;
+            line-height: 1.3;
+            margin-bottom: 0.75em;
+        }
+
+        h1 { font-size: 3rem; margin-bottom: 0.5em; }
+        h2 { font-size: 2.2rem; margin-bottom: 1.5em; text-align: center; color: var(--primary-text-color); }
+        h3 { font-size: 1.5rem; color: var(--primary-color); }
+        h4 { font-size: 1.2rem; }
+
+        p {
+            margin-bottom: 1em;
+            color: var(--secondary-text-color);
+        }
+
+        a {
+            color: var(--primary-color);
+            text-decoration: none;
+            transition: color 0.3s ease, opacity 0.3s ease;
+        }
+
+        a:hover {
+            color: var(--primary-hover-color);
+            opacity: 0.8;
+        }
+
+        img, svg {
+            max-width: 100%;
+            height: auto;
+            vertical-align: middle;
+        }
+
+        .section-padding {
+            padding-top: 80px;
+            padding-bottom: 80px;
+        }
+        
+        .text-center {
+            text-align: center;
+        }
+
+        /* CTA Button Styles */
+        .cta-button {
+            display: inline-block;
+            padding: 14px 32px;
+            font-size: 1rem;
+            font-weight: 600;
+            text-align: center;
+            text-decoration: none;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: background-color 0.3s ease, transform 0.2s ease, box-shadow 0.3s ease;
+            border: none;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+            position: relative; /* Needed for ripple positioning */
+            overflow: hidden;   /* Clip the ripple */
+        }
+
+        .cta-button.primary-cta {
+            background-color: var(--primary-color);
+            color: white;
+        }
+
+        .cta-button.primary-cta:hover {
+            background-color: var(--primary-hover-color);
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(58, 125, 255, 0.4);
+            text-decoration: none;
+        }
+
+        .cta-button.secondary-cta {
+            background-color: transparent;
+            color: var(--primary-color);
+            border: 2px solid var(--primary-color);
+        }
+
+        .cta-button.secondary-cta:hover {
+            background-color: var(--primary-color);
+            color: white;
+            transform: translateY(-2px);
+        }
+
+        /* Ripple effect for buttons */
+        .ripple {
+            position: absolute;
+            border-radius: 50%;
+            background-color: rgba(255, 255, 255, 0.4);
+            width: 100px;
+            height: 100px;
+            transform: scale(0);
+            animation: ripple-animation 0.6s linear;
+            pointer-events: none; /* So it doesn't interfere with button click */
+        }
+        @keyframes ripple-animation {
+            to {
+                transform: scale(4);
+                opacity: 0;
+            }
+        }
+        
+        /* Scroll Animation Placeholders (to be activated by JS) */
+        .fade-in-element {
+            opacity: 0;
+            transform: translateY(20px);
+            transition: opacity 0.6s ease-out, transform 0.6s ease-out;
+        }
+        .fade-in-element.is-visible {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        /* Hero Section */
+        .hero-main {
+            background: linear-gradient(135deg, #1A202C 0%, #2D3748 100%); /* 深色渐变背景 */
+            color: white;
+            padding-top: 120px;
+            padding-bottom: 100px;
+            text-align: center;
+            position: relative;
+            overflow: hidden;
+            min-height: 80vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .hero-main .container {
+            position: relative;
+            z-index: 2;
+        }
+        .hero-main h1 {
+            color: white;
+            font-size: 3.5rem;
+            text-shadow: 0 2px 10px rgba(0,0,0,0.3);
+        }
+        .hero-main .tagline {
+            font-size: 1.3rem;
+            margin-bottom: 40px;
+            opacity: 0.85;
+            font-weight: 300;
+            max-width: 700px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+        /* Dynamic background placeholder for waves or particles */
+        .hero-background-dynamic {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            height: 200px; /* Adjust as needed */
+            z-index: 1;
+            pointer-events: none;
+            /* SVG waves will be inserted here by JS or be pure CSS */
+        }
+        /* Example: Simple animated gradient if no JS waves yet */
+        .hero-main::after {
+            content: '';
+            position: absolute;
+            bottom: -50px; left: -50px;
+            width: 250px; height: 250px;
+            background: rgba(58, 125, 255, 0.1); /* Subtle shape */
+            border-radius: 50%;
+            animation: pulse-bubble 10s infinite ease-in-out alternate;
+            z-index: 0;
+        }
+        @keyframes pulse-bubble {
+            0% { transform: scale(0.8); opacity: 0.3; }
+            100% { transform: scale(1.2); opacity: 0.6; }
+        }
+
+        /* Hero Dynamic Waves */
+        .hero-background-dynamic svg {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            height: auto; /* Maintain aspect ratio */
+            pointer-events: none;
+        }
+
+        .hero-background-dynamic .wave-path {
+            animation-name: move-wave-bg;
+            animation-timing-function: cubic-bezier(0.36, 0.45, 0.63, 0.53);
+            animation-iteration-count: infinite;
+        }
+
+        .hero-background-dynamic .wave-path-1 {
+            fill: rgba(255, 255, 255, 0.06); /* Subtle white wave */
+            animation-duration: 25s;
+            animation-delay: -3s;
+        }
+
+        .hero-background-dynamic .wave-path-2 {
+            fill: rgba(255, 255, 255, 0.08); /* Slightly more visible white wave */
+            animation-duration: 20s;
+            animation-delay: -5s;
+        }
+
+        .hero-background-dynamic .wave-path-3 {
+            fill: rgba(255, 255, 255, 0.04); /* Most subtle white wave */
+            animation-duration: 30s;
+            animation-delay: -1s;
+        }
+
+        @keyframes move-wave-bg {
+            0% {
+                transform: translateX(0) translateY(0);
+            }
+            50% {
+                transform: translateX(-30px) translateY(10px);
+            }
+            100% {
+                transform: translateX(0) translateY(0);
+            }
+        }
+
+        /* Features Section */
+        .features-section {
+            background-color: #F7FAFC; /* 浅灰背景 */
+        }
+        .features-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 40px;
+            margin-top: 50px;
+        }
+        .feature-card {
+            background-color: #FFFFFF;
+            padding: 35px;
+            border-radius: 10px;
+            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.05);
+            text-align: center;
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+        .feature-card:hover {
+            transform: translateY(-10px);
+            box-shadow: 0 12px 35px rgba(0, 0, 0, 0.1);
+        }
+        .feature-icon {
+            font-size: 3.5rem; /* Placeholder for SVG icon size */
+            margin-bottom: 25px;
+            color: #3A7DFF; /* Icon color */
+            /* SVG Icons will be embedded or as <img> */
+            height: 60px; /* Fixed height for alignment if using img/svg */
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: transform 0.3s ease; /* For hover effect */
+        }
+        .feature-card:hover .feature-icon {
+            transform: scale(1.15); /* Icon scales up on card hover */
+        }
+         .feature-card h3 {
+            margin-bottom: 15px;
+        }
+
+        /* Tech Advantages Section */
+        .tech-section {
+            background-color: #F0F7FF; /* 更浅的蓝色背景，区别于features-section */
+        }
+        .tech-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 40px;
+            margin-top: 50px;
+        }
+        .tech-item {
+            background-color: #FFFFFF;
+            padding: 35px;
+            border-radius: 10px;
+            box-shadow: 0 10px 30px rgba(58, 125, 255, 0.08); /* 更强的蓝色阴影 */
+            text-align: center;
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+            margin-bottom: 0;
+            position: relative;
+            overflow: hidden;
+        }
+        .tech-item:hover {
+            transform: translateY(-10px);
+            box-shadow: 0 15px 40px rgba(58, 125, 255, 0.15);
+        }
+        .tech-icon {
+            font-size: 3.5rem;
+            margin-bottom: 25px;
+            color: #3A7DFF;
+            height: 70px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: transform 0.3s ease;
+        }
+        .tech-item:hover .tech-icon {
+            transform: scale(1.15);
+        }
+        .tech-item h3 {
+            margin-bottom: 15px;
+            display: block;
+            text-align: center;
+            color: var(--primary-color);
+            font-size: 1.5rem;
+        }
+        .tech-item p {
+            color: var(--secondary-text-color);
+            line-height: 1.6;
+        }
+        /* 添加一个突出的数据指标样式 */
+        .tech-data {
+            font-size: 1.8rem;
+            font-weight: 700;
+            color: #3A7DFF;
+            margin: 15px 0;
+            display: block;
+        }
+
+        /* Get Started Section */
+        .get-started-section {
+            background-color: #EDF2F7; /* Another light gray variant */
+        }
+        .steps-container {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: space-around;
+            gap: 30px;
+            margin-top: 50px;
+            margin-bottom: 50px;
+        }
+        .step-item {
+            background-color: #FFFFFF;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.05);
+            flex: 1;
+            min-width: 260px;
+            text-align: center;
+        }
+        .step-number {
+            font-size: 2rem;
+            font-weight: bold;
+            color: #3A7DFF;
+            margin-bottom: 15px;
+            border: 2px solid #3A7DFF;
+            width: 50px;
+            height: 50px;
+            line-height: 46px;
+            border-radius: 50%;
+            margin-left: auto;
+            margin-right: auto;
+            margin-bottom: 20px;
+        }
+         .step-item h4 {
+            font-size: 1.3rem;
+            margin-bottom: 10px;
+            color: #2D3748;
+        }
+
+        /* Footer */
+        .site-footer {
+            background-color: #1A202C; /* Dark footer */
+            color: #A0AEC0; /* Lighter text for dark background */
+            padding: 50px 0;
+            text-align: center;
+                font-size: 0.9rem;
+            }
+        .site-footer p {
+            margin-bottom: 0.5em;
+            color: #A0AEC0;
+        }
+        .site-footer a {
+            color: #CBD5E0;
+        }
+        .site-footer a:hover {
+            color: #FFFFFF;
+        }
+
+        /* Responsive Adjustments */
+        @media (min-width: 1200px) {
+            .features-grid, .tech-grid {
+                grid-template-columns: repeat(3, 1fr);
+            }
+        }
+
+        @media (max-width: 992px) {
+            .hero-main h1 { font-size: 2.8rem; }
+            .hero-main .tagline { font-size: 1.15rem; }
+            .features-grid, .tech-grid { grid-template-columns: repeat(3, 1fr); }
+        }
+
+        @media (max-width: 768px) {
+            h1 { font-size: 2.5rem; }
+            h2 { font-size: 1.9rem; }
+            .hero-main { padding-top: 100px; padding-bottom: 80px; min-height: 70vh;}
+            .hero-main h1 { font-size: 2.5rem; }
+            .hero-main .tagline { font-size: 1.1rem;}
+            .features-grid, .tech-grid { grid-template-columns: 1fr; gap: 30px;}
+            .section-padding { padding-top: 60px; padding-bottom: 60px; }
+            .steps-container { flex-direction: column; align-items: center;}
+            .step-item { min-width: 80%; }
+            .hero-content {
+                padding: 40px 20px;
+            }
+            
+            .hero-headline {
+                font-size: 28px;
+                margin-bottom: 15px;
+            }
+            
+            .hero-description {
+                font-size: 16px;
+                margin-bottom: 25px;
+                max-width: 100%;
+            }
+            
+            .feature-grid {
+                grid-template-columns: 1fr;
+                gap: 20px;
+            }
+            
+            .feature-card {
+                padding: 20px;
+            }
+            
+            .feature-description {
+                margin-top: 10px;
+            }
+            
+            .section-heading {
+                font-size: 24px;
+                margin-bottom: 20px;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .hero-content {
+                padding: 30px 15px;
+            }
+            
+            .hero-headline {
+                font-size: 24px;
+                line-height: 1.4;
+            }
+            
+            .hero-description {
+                font-size: 15px;
+            }
+            
+            .feature-title {
+                font-size: 18px;
+            }
+            
+            .feature-description {
+                font-size: 14px;
+            }
+            
+            .section-heading {
+                font-size: 20px;
+            }
+            
+            .cta-button {
+                width: 100%;
+                text-align: center;
+                font-size: 15px;
+                padding: 12px 15px;
+            }
+        }
+
+        /* Transition Element */
+        .transition-element {
+            padding: 20px 0;
+            background: linear-gradient(to bottom, #F7FAFC, #F0F7FF);
+            position: relative;
+        }
+        .divider-with-text {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--primary-color);
+            font-weight: 600;
+            font-size: 1.1rem;
+            margin: 20px 0;
+        }
+        .divider-with-text::before,
+        .divider-with-text::after {
+            content: '';
+            height: 1px;
+            background-color: rgba(58, 125, 255, 0.3);
+            flex-grow: 1;
+            margin: 0 15px;
+        }
+
+    </style>
+</head>
+<body>
+    <div class="page-wrapper">
+        <main>
+            <!-- Hero Section -->
+            <section id="hero-section" class="hero-main">
+                <div class="hero-background-dynamic">
+                    <!-- Dynamic background (waves/particles) will be managed here -->
+                </div>
+                <div class="container fade-in-element">
+                    <h1>ResendMail 智能群发邮件</h1>
+                    <p class="tagline">突破邮件拦截限制，秒级全球触达，提升营销效果</p>
+                    <a href="javascript:void(0);" onclick="navigateToPage('send');" class="cta-button primary-cta">立即使用</a>
+                </div>
+            </section>
+
+            <!-- Key Features Showcase -->
+            <section id="features-showcase" class="features-section section-padding">
+                <div class="container">
+                    <h2>全方位邮件营销工具</h2>
+                    <div class="features-grid">
+                        <div class="feature-card fade-in-element">
+                            <div class="feature-icon">
+                                <!-- SVG Icon Placeholder: e.g., Magic Wand or Shield+Email -->
+                                <svg xmlns="http://www.w3.org/2000/svg" width="60" height="60" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3c-1.2 0-2.4.6-3 1.7A3.6 3.6 0 007.5 8c0 1.7.8 3.2 2.1 4.2L3 18h18l-6.6-5.8c1.3-1 2.1-2.5 2.1-4.2a3.6 3.6 0 00-1.5-3.2C14.4 3.6 13.2 3 12 3zm0 2c.6 0 1.2.3 1.5.8.3.5.5 1.2.5 1.8 0 .7-.2 1.3-.5 1.8-.3.5-.9.8-1.5.8s-1.2-.3-1.5-.8c-.3-.5-.5-1.2-.5-1.8 0-.7.2-1.3.5-1.8.3-.5.9-.8 1.5-.8z"/><path d="M3 21h18"/><path d="M6.2 18l1.8-3 2-2.5 2 2.5 1.8 3"/></svg>
+                            </div>
+                            <h3>智能内容增强</h3>
+                            <p>内置多层内容优化引擎，动态调整策略，智能规避拦截，显著提升邮件送达率。</p>
+                        </div>
+                        <div class="feature-card fade-in-element">
+                            <div class="feature-icon">
+                                <!-- SVG Icon Placeholder: e.g., Rocket or Globe -->
+                                <svg xmlns="http://www.w3.org/2000/svg" width="60" height="60" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a10 10 0 100 20 10 10 0 000-20z"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg>
+                            </div>
+                            <h3>全球极速批量发送</h3>
+                            <p>依托Cloudflare全球加速网络与Resend强大API，轻松处理海量邮件，实现秒级触达。</p>
+                        </div>
+                        <div class="feature-card fade-in-element">
+                            <div class="feature-icon">
+                                <!-- SVG Icon Placeholder: e.g., Palette or Code Brackets -->
+                                <svg xmlns="http://www.w3.org/2000/svg" width="60" height="60" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><line x1="10" y1="9" x2="8" y2="9"/></svg>
+                            </div>
+                            <h3>高级模板与编辑器</h3>
+                            <p>提供丰富的邮件模板和强大的可视化编辑器，助您轻松创作专业且高吸引力的邮件内容。</p>
+                        </div>
+                        <div class="feature-card fade-in-element">
+                            <div class="feature-icon">
+                                <!-- SVG Icon Placeholder: e.g., Sliders or Gear -->
+                                <svg xmlns="http://www.w3.org/2000/svg" width="60" height="60" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09A1.65 1.65 0 0013 4.6a1.65 1.65 0 001.82.33l.06.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+                            </div>
+                            <h3>精细化发送控制</h3>
+                            <p>多账户轮询、灵活API密钥管理及可配置发送参数，让复杂的发送任务尽在您的掌控之中。</p>
+                        </div>
+                        <div class="feature-card fade-in-element">
+                            <div class="feature-icon">
+                                <!-- SVG Icon: Shield/Security -->
+                                <svg xmlns="http://www.w3.org/2000/svg" width="60" height="60" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+                            </div>
+                            <h3>安全与合规保障</h3>
+                            <p>内置隐私保护机制和合规性检查工具，确保您的邮件营销活动符合全球数据保护法规和行业标准。</p>
+                        </div>
+                        <div class="feature-card fade-in-element">
+                            <div class="feature-icon">
+                                <!-- SVG Icon: Chart/Analytics -->
+                                <svg xmlns="http://www.w3.org/2000/svg" width="60" height="60" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/><line x1="2" y1="20" x2="22" y2="20"/></svg>
+                            </div>
+                            <h3>数据驱动分析</h3>
+                            <p>全面的数据统计与分析功能，实时追踪邮件投递状态、打开率及点击转化，助您持续优化营销策略。</p>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Tech Advantages Section -->
+            <section id="tech-advantages" class="tech-section section-padding">
+                <div class="container">
+                    <h2>核心技术优势与实测效果</h2>
+                    <div class="tech-grid">
+                        <div class="tech-item fade-in-element">
+                            <div class="tech-icon">
+                                <!-- SVG Icon: Security Shield -->
+                                <svg xmlns="http://www.w3.org/2000/svg" width="70" height="70" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path><path d="M9.1 9a3 3 0 015.82 1c0 2-3 3-3 3"></path><path d="M12 17h.01"></path></svg>
+                            </div>
+                            <h3>反垃圾邮件突破</h3>
+                            <span class="tech-data">98.7%</span>
+                            <p>收件箱直达率，突破传统过滤限制。我们的多层加密与混淆技术已为超过500家企业带来平均47%的邮件触达提升。</p>
+                        </div>
+                        <div class="tech-item fade-in-element">
+                            <div class="tech-icon">
+                                <!-- SVG Icon: Global Network -->
+                                <svg xmlns="http://www.w3.org/2000/svg" width="70" height="70" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="2" y1="12" x2="22" y2="12"></line><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"></path></svg>
+                            </div>
+                            <h3>全球发送性能</h3>
+                            <span class="tech-data">0.3秒</span>
+                            <p>平均发送延迟，基于全球213个数据中心的边缘计算网络，支持每分钟处理10,000+封邮件，保证企业级可靠性。</p>
+                        </div>
+                        <div class="tech-item fade-in-element">
+                            <div class="tech-icon">
+                                <!-- SVG Icon: Custom Settings -->
+                                <svg xmlns="http://www.w3.org/2000/svg" width="70" height="70" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12.22 2h-.44a2 2 0 00-2 2v.18a2 2 0 01-1 1.73l-.43.25a2 2 0 01-2 0l-.15-.08a2 2 0 00-2.73.73l-.22.38a2 2 0 00.73 2.73l.15.1a2 2 0 011 1.72v.51a2 2 0 01-1 1.74l-.15.09a2 2 0 00-.73 2.73l.22.38a2 2 0 002.73.73l.15-.08a2 2 0 012 0l.43.25a2 2 0 011 1.73V20a2 2 0 002 2h.44a2 2 0 002-2v-.18a2 2 0 011-1.73l.43-.25a2 2 0 012 0l.15.08a2 2 0 002.73-.73l.22-.39a2 2 0 00-.73-2.73l-.15-.08a2 2 0 01-1-1.74v-.5a2 2 0 011-1.74l.15-.09a2 2 0 00.73-2.73l-.22-.38a2 2 0 00-2.73-.73l-.15.08a2 2 0 01-2 0l-.43-.25a2 2 0 01-1-1.73V4a2 2 0 00-2-2z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+                            </div>
+                            <h3>智能自适应系统</h3>
+                            <span class="tech-data">25+</span>
+                            <p>实时可调整参数，基于AI自动优化算法，分析每次发送结果，持续学习并改进发送策略，提升每封邮件的投递成功率。</p>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Get Started Section -->
+            <section id="get-started" class="get-started-section section-padding">
+                <div class="container text-center">
+                    <h2>三步开启高效邮件之旅</h2>
+                    <div class="steps-container">
+                        <div class="step-item fade-in-element">
+                            <div class="step-number">1</div>
+                            <h4>配置您的账户</h4>
+                            <p>在设置页面简单添加您的Resend API密钥和发件域名，即可激活发送服务。</p>
+                        </div>
+                        <div class="step-item fade-in-element">
+                            <div class="step-number">2</div>
+                            <h4>创建您的邮件</h4>
+                            <p>使用内置富文本编辑器或选择专业模板，轻松撰写和设计您的邮件内容。</p>
+                        </div>
+                        <div class="step-item fade-in-element">
+                            <div class="step-number">3</div>
+                            <h4>批量发送与追踪</h4>
+                            <p>导入收件人列表，一键批量发送，并通过发送历史追踪邮件状态，优化策略。</p>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <footer class="site-footer">
+            <div class="container">
+                <p>&copy; <span id="currentYear"></span> ResendMail. 保留所有权利。</p>
+                <p>
+                    <!-- Optional: Links to privacy/terms if they exist as separate pages/sections -->
+                    <!-- <a href="#privacy">隐私政策</a> | <a href="#terms">服务条款</a> -->
+                </p>
+            </div>
+        </footer>
+    </div>
+
+    <script>
+        // Notify parent window that the page has loaded (if applicable)
+        window.onload = function() {
+            if (window.parent && window.parent.pageLoaded) {
+                window.parent.pageLoaded('home');
+            }
+            initScrollAnimations();
+            setCurrentYear();
+            // Placeholder for hero section dynamic background init
+            initHeroDynamicBackground(); 
+            initCtaButtonRipples(); // Initialize ripple effect for CTA buttons
+        };
+
+        // Function to navigate to other pages (simulating main app's navigation)
+        function navigateToPage(page) {
+            try {
+                        if (window.parent && typeof window.parent.navigateTo === 'function') {
+                    window.parent.navigateTo(page);
+                    console.log('导航到页面:', page);
+                        } else {
+                    console.warn('无法调用父窗口的navigateTo函数。');
+                    // Fallback if not in iframe or parent function not available
+                    if (page === 'send') window.location.hash = '#send'; // Example
+                        }
+                    } catch (error) {
+                        console.error('导航时出错:', error);
+                if (page === 'send') window.location.href = (window.location.pathname.includes('pages/') ? '../index.html#send' : 'index.html#send');
+            }
+        }
+        
+        // Scroll Animation
+        function initScrollAnimations() {
+            const observer = new IntersectionObserver((entries) => {
+                entries.forEach(entry => {
+                    if (entry.isIntersecting) {
+                        entry.target.classList.add('is-visible');
+                        // Optional: unobserve after animation to save resources
+                        // observer.unobserve(entry.target); 
+                    }
+                });
+            }, { threshold: 0.1 }); // Trigger when 10% of the element is visible
+
+            document.querySelectorAll('.fade-in-element').forEach(el => {
+                observer.observe(el);
+            });
+        }
+
+        // Set current year in footer
+        function setCurrentYear() {
+            const yearSpan = document.getElementById('currentYear');
+            if (yearSpan) {
+                yearSpan.textContent = new Date().getFullYear();
+            }
+        }
+
+        // Placeholder for Hero Dynamic Background (e.g., waves, particles)
+        function initHeroDynamicBackground() {
+            const heroBgContainer = document.querySelector('.hero-background-dynamic');
+            if (!heroBgContainer) return;
+
+            const waveSvgs = [
+                {
+                    path: "M0,128L48,138.7C96,149,192,171,288,170.7C384,171,480,149,576,133.3C672,117,768,107,864,112C960,117,1056,139,1152,144C1248,149,1344,139,1392,133.3L1440,128L1440,320L1392,320C1344,320,1248,320,1152,320C1056,320,960,320,864,320C768,320,672,320,576,320C480,320,384,320,288,320C192,320,96,320,48,320L0,320Z",
+                    viewBox: "0 0 1440 200", // Adjusted viewBox for better fit
+                    className: "wave-path-1",
+                    style: "height: 100px;" // Adjust height as needed
+                },
+                {
+                    path: "M0,160L40,170.7C80,181,160,203,240,202.7C320,203,400,181,480,154.7C560,128,640,96,720,90.7C800,85,880,107,960,133.3C1040,160,1120,192,1200,186.7C1280,181,1360,139,1400,117.3L1440,96L1440,320L1400,320C1360,320,1280,320,1200,320C1120,320,1040,320,960,320C880,320,800,320,720,320C640,320,560,320,480,320C400,320,320,320,240,320C160,320,80,320,40,320L0,320Z",
+                    viewBox: "0 0 1440 220",
+                    className: "wave-path-2",
+                    style: "height: 120px; bottom: -10px;" // Overlap slightly
+                },
+                {
+                    path: "M0,64L60,85.3C120,107,240,149,360,160C480,171,600,149,720,128C840,107,960,85,1080,90.7C1200,96,1320,128,1380,144L1440,160L1440,320L1380,320C1320,320,1200,320,1080,320C960,320,840,320,720,320C600,320,480,320,360,320C240,320,120,320,60,320L0,320Z",
+                    viewBox: "0 0 1440 180",
+                    className: "wave-path-3",
+                    style: "height: 80px; bottom: -20px;" // Further overlap
+                }
+            ];
+
+            waveSvgs.forEach(waveData => {
+                const svgNS = "http://www.w3.org/2000/svg";
+                const svgEl = document.createElementNS(svgNS, "svg");
+                svgEl.setAttribute("viewBox", waveData.viewBox);
+                svgEl.setAttribute("preserveAspectRatio", "none"); // Stretch to fill
+                if(waveData.style) {
+                    svgEl.style.cssText = waveData.style;
+                }
+
+                const pathEl = document.createElementNS(svgNS, "path");
+                pathEl.setAttribute("d", waveData.path);
+                pathEl.classList.add("wave-path", waveData.className);
+                
+                svgEl.appendChild(pathEl);
+                heroBgContainer.appendChild(svgEl);
+            });
+            console.log('Hero dynamic background (waves) initialized.');
+        }
+
+        // Function to add ripple effect to CTA buttons
+        function initCtaButtonRipples() {
+            const ctaButtons = document.querySelectorAll('.cta-button');
+
+            ctaButtons.forEach(button => {
+                button.addEventListener('click', function(e) {
+                    // Create ripple span
+                    let ripple = button.querySelector('.ripple');
+                    if (ripple) {
+                        ripple.remove();
+                    }
+                    ripple = document.createElement('span');
+                    ripple.classList.add('ripple');
+                    
+                    // Get position of click relative to the button
+                    const rect = button.getBoundingClientRect();
+                    const size = Math.max(rect.width, rect.height);
+                    ripple.style.width = ripple.style.height = size + 'px';
+                    ripple.style.left = e.clientX - rect.left - size / 2 + 'px';
+                    ripple.style.top = e.clientY - rect.top - size / 2 + 'px';
+                    
+                    button.appendChild(ripple);
+
+                    // Original navigateToPage logic (if it's a navigation button)
+                    // We keep onclick for navigateToPage for clarity for now
+                    // but this could be integrated here if all CTAs are navs
+                });
+            });
+        }
+
+    </script>
+</body>
+</html> 

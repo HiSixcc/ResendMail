@@ -1,0 +1,625 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>ResendMail 智能群发邮件</title>
+    <link rel="stylesheet" href="css/styles.css">
+    <!-- 直接使用BootCDN加载Quill编辑器的CSS -->
+    <link rel="stylesheet" href="https://cdn.bootcdn.net/ajax/libs/quill/1.3.7/quill.snow.min.css">
+    <!-- 删除Material Icons CDN链接，改用内联样式实现 -->
+    <style>
+        html, body {
+            height: 100%;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        }
+        
+        body {
+            box-sizing: border-box;
+        }
+        
+        .container {
+            display: flex;
+            flex-direction: column;
+            height: 100%;
+            width: 100%;
+            max-width: 100vw;
+            position: relative;
+        }
+        
+        iframe {
+            border: none;
+            width: 100%;
+            flex: 1;
+            min-height: 0; /* 重要: 允许iframe缩小到小于内容高度 */
+        }
+        
+        /* 导航栏样式优化 */
+        .navbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            height: 60px;
+            padding: 0 20px;
+            background-color: var(--page-background-color);
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+            position: relative;
+            z-index: 1000;
+            flex-shrink: 0; /* 防止导航栏被压缩 */
+            width: 100%;
+            box-sizing: border-box;
+        }
+        
+        .logo {
+            margin-right: 0;
+        }
+        
+        .logo a {
+            color: var(--primary-color);
+            font-size: 24px;
+            font-weight: bold;
+            text-decoration: none;
+        }
+        
+        .nav-links {
+            display: flex;
+            gap: 30px;
+            flex-wrap: wrap;
+        }
+        
+        .nav-link {
+            color: var(--primary-color);
+            text-decoration: none;
+            font-size: 15px;
+            padding: 6px 0;
+            position: relative;
+            transition: color 0.3s;
+        }
+        
+        .nav-link:hover {
+            color: var(--primary-hover-color);
+            /* opacity: 0.8; */ /* Alternative hover effect if all text is same blue */
+        }
+        
+        .nav-link.active {
+            color: var(--primary-color);
+            font-weight: 500;
+        }
+        
+        .nav-link.active::after {
+            content: "";
+            position: absolute;
+            bottom: -3px;
+            left: 0;
+            width: 100%;
+            height: 2px;
+            background-color: var(--primary-color);
+        }
+        
+        /* Custom selection style for nav links */
+        .nav-link::selection {
+            background-color: var(--primary-color);
+            color: #FFFFFF; /* White text on blue selection */
+        }
+        /* For Firefox */
+        .nav-link::-moz-selection {
+            background-color: var(--primary-color);
+            color: #FFFFFF; /* White text on blue selection */
+        }
+        
+        /* 汉堡菜单按钮 */
+        .hamburger-menu {
+            display: none;
+            background: none;
+            border: none;
+            cursor: pointer;
+            padding: 10px;
+            color: var(--primary-color);
+        }
+        
+        /* 自定义图标样式 - 不使用Material Icons库 */
+        .custom-icon {
+            display: inline-block;
+            width: 24px;
+            height: 24px;
+            background-repeat: no-repeat;
+            background-position: center;
+            background-size: contain;
+        }
+        
+        .icon-menu {
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' height='24' width='24' fill='%233A7DFF'%3E%3Cpath d='M3 18h18v-2H3v2zm0-5h18v-2H3v2zm0-7v2h18V6H3z'/%3E%3C/svg%3E");
+        }
+        
+        .icon-close {
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' height='24' width='24' fill='%233A7DFF'%3E%3Cpath d='M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z'/%3E%3C/svg%3E");
+        }
+        
+        .icon-home {
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' height='24' width='24' fill='%233A7DFF'%3E%3Cpath d='M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z'/%3E%3C/svg%3E");
+        }
+        
+        .icon-send {
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' height='24' width='24' fill='%233A7DFF'%3E%3Cpath d='M2.01 21 23 12 2.01 3 2 10l15 2-15 2z'/%3E%3C/svg%3E");
+        }
+        
+        .icon-history {
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' height='24' width='24' fill='%233A7DFF'%3E%3Cpath d='M13 3c-4.97 0-9 4.03-9 9H1l3.89 3.89.07.14L9 12H6c0-3.87 3.13-7 7-7s7 3.13 7 7-3.13 7-7 7c-1.93 0-3.68-.79-4.94-2.06l-1.42 1.42C8.27 19.99 10.51 21 13 21c4.97 0 9-4.03 9-9s-4.03-9-9-9zm-1 5v5l4.28 2.54.72-1.21-3.5-2.08V8H12z'/%3E%3C/svg%3E");
+        }
+        
+        .icon-settings {
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' height='24' width='24' fill='%233A7DFF'%3E%3Cpath d='M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z'/%3E%3C/svg%3E");
+        }
+        
+        .icon-about {
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' height='24' width='24' fill='%233A7DFF'%3E%3Cpath d='M11 17h2v-6h-2v6zm1-15C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zM11 9h2V7h-2v2z'/%3E%3C/svg%3E");
+        }
+        
+        /* 侧边栏导航样式 */
+        .sidebar {
+            position: fixed;
+            top: 0;
+            left: -280px;
+            width: 280px;
+            height: 100%;
+            background-color: var(--page-background-color);
+            box-shadow: 2px 0 5px rgba(0, 0, 0, 0.1);
+            z-index: 2000;
+            transition: left 0.3s ease;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .sidebar.active {
+            left: 0;
+        }
+        
+        .sidebar-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 20px 20px;
+            border-bottom: 1px solid var(--border-color);
+        }
+        
+        .sidebar-header .logo {
+            font-size: 24px;
+            font-weight: bold;
+            color: var(--primary-color);
+        }
+        
+        .close-sidebar {
+            background: none;
+            border: none;
+            cursor: pointer;
+            color: var(--primary-color);
+            padding: 5px;
+        }
+        
+        .sidebar-nav {
+            padding: 20px 0;
+            flex: 1;
+        }
+        
+        .sidebar-nav-link {
+            display: flex;
+            align-items: center;
+            padding: 15px 20px;
+            color: var(--primary-text-color);
+            text-decoration: none;
+            transition: background-color 0.3s;
+        }
+        
+        .sidebar-nav-link:hover {
+            background-color: var(--light-background-color);
+        }
+        
+        .sidebar-nav-link.active {
+            background-color: rgba(58, 125, 255, 0.1);
+            color: var(--primary-color);
+            font-weight: 500;
+        }
+        
+        .sidebar-nav-link .nav-icon {
+            margin-right: 15px;
+            flex-shrink: 0;
+        }
+        
+        .sidebar-nav-link .nav-text {
+            flex: 1;
+        }
+        
+        .sidebar-footer {
+            padding: 20px;
+            border-top: 1px solid var(--border-color);
+            font-size: 12px;
+            color: var(--secondary-text-color);
+            text-align: center;
+        }
+        
+        /* 遮罩层 */
+        .sidebar-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            z-index: 1999;
+            display: none;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+        
+        .sidebar-overlay.active {
+            display: block;
+            opacity: 1;
+        }
+        
+        /* 载入中提示样式 */
+        .loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: rgba(255, 255, 255, 0.7);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 2000;
+            display: none;
+        }
+        
+        .spinner {
+            border: 4px solid rgba(0, 0, 0, 0.1);
+            border-radius: 50%;
+            border-top: 4px solid var(--primary-color);
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+        }
+        
+        .main-content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            min-height: 0; /* 允许内容区域缩小 */
+            overflow: hidden; /* 防止双滚动条 */
+            width: 100%;
+            position: relative;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        /* 添加响应式设计的媒体查询 */
+        @media (max-width: 768px) {
+            .navbar {
+                padding: 0 15px;
+                height: 50px;
+            }
+            
+            .logo {
+                margin-right: 0;
+            }
+            
+            .logo a {
+                font-size: 20px;
+            }
+            
+            .nav-links {
+                display: none;
+            }
+            
+            .hamburger-menu {
+                display: block;
+            }
+        }
+        
+        @media (max-width: 480px) {
+            .navbar {
+                padding: 0 10px;
+            }
+            
+            .logo {
+                margin-right: 0;
+            }
+            
+            .sidebar {
+                width: 250px;
+            }
+        }
+        
+        /* 初始加载界面 */
+        #initialLoading {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: var(--page-background-color);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 9999;
+        }
+        
+        #initialLoading .logo-text {
+            font-size: 28px;
+            font-weight: bold;
+            color: var(--primary-color);
+            margin-bottom: 20px;
+        }
+        
+        #initialLoading .loading-text {
+            font-size: 16px;
+            color: var(--secondary-text-color);
+            margin-top: 15px;
+        }
+        
+        /* 通知样式 */
+        #notification-container {
+            position: fixed;
+            top: 70px;
+            right: 20px;
+            z-index: 9999;
+        }
+        
+        .notification {
+            padding: 12px 20px;
+            margin-bottom: 10px;
+            border-radius: 4px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+            color: white;
+            position: relative;
+        }
+        
+        .notification-success {
+            background-color: var(--success-color);
+        }
+        
+        .notification-error {
+            background-color: var(--error-color);
+        }
+        
+        .notification-warning {
+            background-color: var(--warning-color);
+        }
+        
+        .notification-info {
+            background-color: var(--info-color);
+        }
+    </style>
+</head>
+<body>
+    <!-- 初始加载界面 -->
+    <div id="initialLoading">
+        <div class="logo-text">ResendMail 智能群发邮件</div>
+        <div class="spinner"></div>
+        <div class="loading-text">正在加载资源...</div>
+    </div>
+
+    <!-- 侧边栏导航 -->
+    <div id="sidebar" class="sidebar">
+        <div class="sidebar-header">
+            <div class="logo">ResendMail</div>
+            <button id="closeSidebar" class="close-sidebar" aria-label="关闭导航菜单">
+                <span class="custom-icon icon-close"></span>
+            </button>
+        </div>
+        <nav class="sidebar-nav">
+            <a href="javascript:void(0)" class="sidebar-nav-link" data-page="home" onclick="navigateTo('home'); toggleSidebar(false); return false;">
+                <span class="custom-icon icon-home nav-icon"></span>
+                <span class="nav-text">主页</span>
+            </a>
+            <a href="javascript:void(0)" class="sidebar-nav-link" data-page="send" onclick="navigateTo('send'); toggleSidebar(false); return false;">
+                <span class="custom-icon icon-send nav-icon"></span>
+                <span class="nav-text">发送邮件</span>
+            </a>
+            <a href="javascript:void(0)" class="sidebar-nav-link" data-page="settings" onclick="navigateTo('settings'); toggleSidebar(false); return false;">
+                <span class="custom-icon icon-settings nav-icon"></span>
+                <span class="nav-text">设置</span>
+            </a>
+            <a href="javascript:void(0)" class="sidebar-nav-link" data-page="about" onclick="navigateTo('about'); toggleSidebar(false); return false;">
+                <span class="custom-icon icon-about nav-icon"></span>
+                <span class="nav-text">关于系统</span>
+            </a>
+        </nav>
+        <div class="sidebar-footer">
+            ResendMail 智能群发邮件 © 2023
+        </div>
+    </div>
+    
+    <!-- 侧边栏遮罩层 -->
+    <div id="sidebarOverlay" class="sidebar-overlay"></div>
+
+    <div class="container" style="display: none;">
+        <nav class="navbar">
+            <div class="logo">
+                <a href="javascript:void(0)" onclick="navigateTo('home'); return false;">ResendMail</a>
+            </div>
+            <!-- 汉堡菜单按钮 -->
+            <button id="hamburgerMenu" class="hamburger-menu" aria-label="打开导航菜单">
+                <span class="custom-icon icon-menu"></span>
+            </button>
+            <div class="nav-links">
+                <a href="javascript:void(0)" class="nav-link" data-page="home" onclick="navigateTo('home'); return false;">主页</a>
+                <a href="javascript:void(0)" class="nav-link" data-page="send" onclick="navigateTo('send'); return false;">发送邮件</a>
+                <a href="javascript:void(0)" class="nav-link" data-page="settings" onclick="navigateTo('settings'); return false;">设置</a>
+                <a href="javascript:void(0)" class="nav-link" data-page="about" onclick="navigateTo('about'); return false;">关于系统</a>
+            </div>
+        </nav>
+
+        <div class="main-content">
+            <iframe id="sendFrame" src="about:blank"></iframe>
+        </div>
+    </div>
+
+    <!-- 加载组件 -->
+    <div id="loading" class="loading-overlay">
+        <div class="spinner"></div>
+    </div>
+
+    <!-- 直接使用BootCDN加载Quill编辑器的JS -->
+    <script src="https://cdn.bootcdn.net/ajax/libs/quill/1.3.7/quill.min.js"></script>
+    <!-- 先加载主应用脚本并初始化所有对象 -->
+    <script src="js/main.js"></script>
+    
+    <script>
+        // 初始化应用
+        function initializeApp() {
+            try {
+                console.log('ResendMail应用初始化...');
+                
+                // 确保全局对象已初始化
+                if (!window.EmailService) {
+                    console.error('EmailService对象未初始化');
+                    document.querySelector('.loading-text').textContent = 'EmailService初始化失败，请刷新页面重试';
+                    return;
+                }
+                
+                // 显示主界面
+                document.querySelector('.container').style.display = 'flex';
+                
+                // 首先从存储中获取上次的页面，如果没有则使用默认页面
+                const lastPage = sessionStorage.getItem('currentPage') || 'home';
+                
+                // 导航到上次的页面
+                navigateTo(lastPage);
+                
+                // 隐藏加载界面
+                document.getElementById('initialLoading').style.display = 'none';
+                
+                // 初始化侧边栏事件
+                initSidebar();
+                
+            } catch (error) {
+                console.error('初始化应用失败:', error);
+                document.querySelector('.loading-text').textContent = '初始化失败，请刷新页面重试';
+            }
+        }
+        
+        // 导航到指定页面
+        function navigateTo(page) {
+            console.log(`导航到页面: ${page}`);
+            
+            // 修改当前页面
+            UIState.setCurrentPage(page);
+            
+            // 保存当前页面到sessionStorage，便于页面刷新后恢复
+            sessionStorage.setItem('currentPage', page);
+            
+            // 根据选择的页面加载相应的内容
+            const sendFrame = document.getElementById('sendFrame');
+            
+            switch (page) {
+                case 'home':
+                    sendFrame.src = 'pages/home.html';
+                    break;
+                case 'send':
+                    sendFrame.src = 'pages/send.html';
+                    break;
+                case 'settings':
+                    sendFrame.src = 'pages/settings.html';
+                    break;
+                case 'about':
+                    sendFrame.src = 'pages/about.html';
+                    break;
+                default:
+                    sendFrame.src = 'pages/home.html';
+            }
+            
+            // 更新导航状态
+            document.querySelectorAll('.nav-link').forEach(link => {
+                link.classList.remove('active');
+            });
+            
+            const activeLink = document.querySelector(`.nav-link[data-page="${page}"]`);
+            if (activeLink) {
+                activeLink.classList.add('active');
+            }
+            
+            // 同步更新侧边栏导航状态
+            document.querySelectorAll('.sidebar-nav-link').forEach(link => {
+                link.classList.remove('active');
+            });
+            
+            const activeSidebarLink = document.querySelector(`.sidebar-nav-link[data-page="${page}"]`);
+            if (activeSidebarLink) {
+                activeSidebarLink.classList.add('active');
+            }
+        }
+        
+        // 切换侧边栏显示状态
+        function toggleSidebar(show) {
+            const sidebar = document.getElementById('sidebar');
+            const overlay = document.getElementById('sidebarOverlay');
+            
+            if (show) {
+                sidebar.classList.add('active');
+                overlay.classList.add('active');
+                document.body.style.overflow = 'hidden'; // 防止背景滚动
+            } else {
+                sidebar.classList.remove('active');
+                overlay.classList.remove('active');
+                document.body.style.overflow = ''; // 恢复滚动
+            }
+        }
+        
+        // 初始化侧边栏事件
+        function initSidebar() {
+            const hamburgerMenu = document.getElementById('hamburgerMenu');
+            const closeSidebar = document.getElementById('closeSidebar');
+            const overlay = document.getElementById('sidebarOverlay');
+            
+            // 点击汉堡菜单打开侧边栏
+            hamburgerMenu.addEventListener('click', function() {
+                toggleSidebar(true);
+            });
+            
+            // 点击关闭按钮关闭侧边栏
+            closeSidebar.addEventListener('click', function() {
+                toggleSidebar(false);
+            });
+            
+            // 点击遮罩层关闭侧边栏
+            overlay.addEventListener('click', function() {
+                toggleSidebar(false);
+            });
+            
+            // 添加触摸滑动手势支持
+            let touchStartX = 0;
+            const sidebar = document.getElementById('sidebar');
+            
+            // 监听触摸开始事件
+            document.addEventListener('touchstart', function(e) {
+                touchStartX = e.touches[0].clientX;
+            });
+            
+            // 监听触摸移动事件
+            document.addEventListener('touchmove', function(e) {
+                if (!sidebar.classList.contains('active')) return;
+                
+                const touchX = e.touches[0].clientX;
+                const diff = touchStartX - touchX;
+                
+                // 如果向左滑动超过50px，关闭侧边栏
+                if (diff > 50) {
+                    toggleSidebar(false);
+                }
+            });
+        }
+        
+        // 页面加载完成后初始化应用
+        window.addEventListener('DOMContentLoaded', initializeApp);
+    </script>
+</body>
+</html> 
